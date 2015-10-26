@@ -34,7 +34,6 @@ message ClientMessage {
     TYPE_DONE = 4; // client signals to the master that the current function call is completed (?)
     TYPE_PUSH = 5; // client delivers an object to another machine (uses blob)
     TYPE_PULL = 6; // client tells server to initiate sending data from nearest client (uses objref)
-    TYPE_ERROR = 7; // client tells the server that there was an error
   };
   optional Type type = 1; // type of the message (see above)
   optional Call call = 2; // function call to be executed
