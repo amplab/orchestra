@@ -1,0 +1,9 @@
+// Data types for Hermes
+
+message Int {
+  optional int32 val = 1;
+}
+
+message Float {
+  optional float val = 1;
+}
