@@ -3,6 +3,9 @@ name = "hermes"
 version = "0.1.0"
 authors = ["Philipp Moritz <pcmoritz@gmail.com>"]
 
+[lib]
+crate-type = ["dylib"]
+
 [dependencies]
 log = "0.3"
 env_logger = "0.3"
