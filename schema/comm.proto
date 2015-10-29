@@ -48,7 +48,7 @@ message ServerMessage {
     TYPE_PUSH = 2; // server delivers an argument to the client
     TYPE_PULL = 3; // server wants to pull a result from the client (later renamed to TYPE_DISTRIBUTE)
     TYPE_DONE = 4; // server tells client that function call has finished
-    TYPE_ERROR = 5; // server tells the client that there was an error
+    // TYPE_ERROR = 5; // server tells the client that there was an error
   }
   optional Type type = 1;
   optional Call call = 2;
