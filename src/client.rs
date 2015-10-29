@@ -1,12 +1,9 @@
 use std::collections::HashMap;
 use nanomsg::{Socket, Protocol};
-use protobuf;
-use std::io::Read;
 
 use comm;
-use utils;
 use utils::{ObjRef, receive_message, send_message};
-use libc::{c_int, uint64_t, c_void};
+use libc::{uint64_t, c_void};
 use std::thread;
 
 pub type FnRef = usize; // Index of locally registered function
@@ -29,7 +26,7 @@ impl Context {
             clientsocket.bind(&client_addr[..]).ok().unwrap();
             thread::sleep_ms(10);
             send_message::<comm::ClientMessage>(&mut socket, &mut reg);
-            endpoint.shutdown();
+            endpoint.shutdown().unwrap();
             socket = clientsocket;
         }
         Context { client: Client::new(), socket: socket }
@@ -63,9 +60,6 @@ impl Client {
     // DEPRECATED
     pub fn get_object<'b>(self: &'b mut Client, objref: ObjRef) -> Option<Vec<u8>> {
         return self.objects.get(&objref).and_then(|data| Some(data.to_vec()));
-    }
-    pub fn get_object_addr<'b>(self: &'b mut Client, objref: ObjRef) -> Option<*mut c_void> {
-        return self.objects.get(&objref).and_then(|data| Some(data[..].as_ptr() as *mut c_void));
     }
     pub fn get_num_args<'b>(self: &'b Client) -> usize {
         return self.args.len();

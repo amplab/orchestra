@@ -16,7 +16,6 @@ mod server;
 mod utils;
 
 use nanomsg::{Socket, Protocol};
-use std::io::{Write};
 use std::fs::File;
 
 use server::Server;

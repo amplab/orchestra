@@ -14,7 +14,7 @@ mod comm;
 mod client;
 mod utils;
 
-use libc::{size_t, c_char, c_void, c_int, uint64_t, uint8_t};
+use libc::{size_t, c_char, c_int, uint64_t, uint8_t};
 use std::slice;
 use client::{Client, Context};
 use std::ffi::CStr;

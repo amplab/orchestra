@@ -1,25 +1,17 @@
 extern crate nanomsg;
 
-use protobuf;
-use protobuf::{Message};
-
 use comm;
-use types;
 use graph;
-use utils;
 
-use utils::make_message;
+use utils::{send_message, receive_message};
 use utils::ObjRef;
 use graph::CompGraph;
 use rand;
-use rand::{Rng};
 use rand::distributions::{IndependentSample, Range};
 use std::io::Write;
 use std::io::Read;
 use nanomsg::{Socket, Protocol};
 use std::process;
-
-use std::fmt::Debug;
 
 pub struct Conn {
     socket: Socket,
@@ -78,7 +70,7 @@ impl<'a> Server<'a> {
     }
 
     // returns the object reference to the result
-    pub fn handle_invoke<'b>(self: &'b mut Server<'a>, socket: &'b mut Socket, msg: comm::ClientMessage) -> ObjRef {
+    pub fn handle_invoke<'b>(self: &'b mut Server<'a>, msg: comm::ClientMessage) -> ObjRef {
         let args : Vec<usize> = msg.get_call().get_args().iter().map(|arg| *arg as usize).collect();
         // handle reduce here
         let objref = self.add_call(msg.get_call().get_name().to_string(), args.as_slice());
@@ -92,15 +84,15 @@ impl<'a> Server<'a> {
 
     // process request by client
     pub fn process_request<'b>(self: &'b mut Server<'a>, socket: &'b mut Socket) {
-        let msg = receive_client_message(socket);
+        let msg = receive_message::<comm::ClientMessage>(socket);
         match msg.get_field_type() {
             comm::ClientMessage_Type::TYPE_INVOKE => {
                 info!("received function call {}", msg.get_call().get_name());
-                let objref = self.handle_invoke(socket, msg);
+                let objref = self.handle_invoke(msg);
                 let mut message = comm::ServerMessage::new();
                 message.set_field_type(comm::ServerMessage_Type::TYPE_DONE);
                 message.set_objref(objref as u64);
-                send_server_message(socket, &mut message);
+                send_message(socket, &mut message);
             },
             comm::ClientMessage_Type::TYPE_REGISTER => {
                 info!("registered new worker");
@@ -135,7 +127,7 @@ impl<'a> Server<'a> {
         info!("calling function {}", name.as_str());
         send_function_call(socket, name, args.iter().map(|x| *x).collect(), result); // this is weird I think, what is a better way?
         socket.flush().ok().unwrap();
-        let msg = receive_client_message(socket);
+        let msg = receive_message::<comm::ClientMessage>(socket);
         if msg.get_field_type() == comm::ClientMessage_Type::TYPE_ACK {
             info!("'ack' received");
         } else {
@@ -152,7 +144,7 @@ impl<'a> Server<'a> {
             let data = self.get_obj(*arg);
             send_argument(socket, *arg, data);
             info!("sending argument {} for function", *arg);
-            let msg = receive_client_message(socket);
+            let msg = receive_message::<comm::ClientMessage>(socket);
             if msg.get_field_type() == comm::ClientMessage_Type::TYPE_ACK {
                  info!("'ack' for argument received");
             } else {
@@ -163,11 +155,11 @@ impl<'a> Server<'a> {
 
         let mut msg = comm::ServerMessage::new();
         msg.set_field_type(comm::ServerMessage_Type::TYPE_DONE);
-        send_server_message(socket, &mut msg); // todo: remove the 'mut' here
+        send_message(socket, &mut msg); // todo: remove the 'mut' here
 
         // handle function calls from client
         loop {
-            let msg = receive_client_message(socket);
+            let msg = receive_message::<comm::ClientMessage>(socket);
             match msg.get_field_type() {
                 comm::ClientMessage_Type::TYPE_DONE => {
                     info!("'done' message received");
@@ -175,11 +167,11 @@ impl<'a> Server<'a> {
                 },
                 comm::ClientMessage_Type::TYPE_INVOKE => {
                     // maybe factor this into handle_invoke to unify with the one in the main loop
-                    let objref = self.handle_invoke(socket, msg);
+                    let objref = self.handle_invoke(msg);
                     let mut message = comm::ServerMessage::new();
                     message.set_field_type(comm::ServerMessage_Type::TYPE_DONE);
                     message.set_objref(objref as u64);
-                    send_server_message(socket, &mut message);
+                    send_message(socket, &mut message);
                 }
                 _ => {
                     info!("{:?}", msg.get_field_type());
@@ -200,28 +192,13 @@ pub fn pull_obj_from_client(socket: &mut Socket, address: &str, objref: ObjRef) 
     message.set_address(address.to_string());
     message.set_objref(objref as u64);
     info!("send pull request");
-    send_server_message(socket, &mut message);
+    send_message(socket, &mut message);
     // accept answer
-    let answer = receive_client_message(socket);
+    let answer = receive_message::<comm::ClientMessage>(socket);
     info!("received pull request");
     // assert that we actually have a PUSH object
     let result = answer.get_blob().get_data().iter().map(|x| *x).collect();
     return result;
-}
-
-pub fn send_server_message(socket: &mut Socket, message: &mut comm::ServerMessage) {
-    let buff = make_message::<comm::ServerMessage>(message);
-    socket.write_all(buff.as_slice()).unwrap();
-    socket.flush().unwrap();
-}
-
-// receive message from client
-pub fn receive_client_message(socket: &mut Socket) -> comm::ClientMessage {
-    use std::io::Cursor;
-    let mut buf = Vec::new();
-    socket.read_to_end(&mut buf).unwrap();
-    let mut read_buf = Cursor::new(buf);
-    return protobuf::parse_from_reader::<comm::ClientMessage>(&mut read_buf).unwrap();
 }
 
 pub fn send_function_call(socket: &mut Socket, name: String, arguments: Vec<ObjRef>, result: ObjRef) {
@@ -232,7 +209,7 @@ pub fn send_function_call(socket: &mut Socket, name: String, arguments: Vec<ObjR
     call.set_args(arguments.iter().map(|arg| *arg as u64).collect());
     call.set_result(result as u64);
     message.set_call(call);
-    send_server_message(socket, &mut message);
+    send_message(socket, &mut message);
 }
 
 // TODO: rename this to reflect more general data transfer
@@ -243,5 +220,5 @@ pub fn send_argument(socket: &mut Socket, objref: ObjRef, data: Vec<u8>) {
     blob.set_objref(objref as u64);
     message.set_field_type(comm::ServerMessage_Type::TYPE_PUSH);
     message.set_blob(blob);
-    send_server_message(socket, &mut message);
+    send_message(socket, &mut message);
 }
