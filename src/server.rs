@@ -95,7 +95,7 @@ impl<'a> Server<'a> {
         let msg = receive_client_message(socket);
         match msg.get_field_type() {
             comm::ClientMessage_Type::TYPE_INVOKE => {
-                info!("received another function call");
+                info!("received function call {}", msg.get_call().get_name());
                 let objref = self.handle_invoke(socket, msg);
                 let mut message = comm::ServerMessage::new();
                 message.set_field_type(comm::ServerMessage_Type::TYPE_DONE);
