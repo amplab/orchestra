@@ -8,9 +8,9 @@ pub type Host = u64;
 // or a Reduce node. An opid is a pointer into the ops vector of the computation graph.
 #[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Debug)]
 enum Node<'a> {
-    // Map {
-    //    opid: usize
-    // },
+    Map {
+        opid: usize
+    },
     Reduce {
         opid: usize
     },
@@ -19,7 +19,7 @@ enum Node<'a> {
     },
     Obj {
         objref: ObjRef,
-        hosts: &'a[Host]
+        hosts: &'a [Host]
     }
 }
 
@@ -38,29 +38,36 @@ impl<'a> CompGraph<'a> {
         };
     }
     pub fn add_obj(self: &mut CompGraph<'a>) -> (ObjRef, NodeIndex) {
-        let objref = self.objs.len();
+        let objref = self.objs.len() as ObjRef;
         let obj = self.graph.add_node(Node::Obj{objref: objref, hosts: &[]});
         self.objs.push(obj);
         return (objref, obj);
     }
     pub fn add_op<'b>(self: &mut CompGraph<'a>, name: String, args: &'b [ObjRef], result: ObjRef) {
-        self.ops.push(name);
+        self.ops.push(name); // TODO: only store unique names
         let func = self.graph.add_node(Node::Op {opid: self.ops.len() - 1});
         let res = self.graph.add_node(Node::Obj {objref: result, hosts: &[]});
         for arg in args {
-            self.graph.add_edge(self.objs[*arg], func, 0.0);
+            self.graph.add_edge(self.objs[*arg as usize], func, 0.0);
         }
         self.graph.add_edge(func, res, 0.0);
     }
-    // pub fn add_map<'b>(self: &mut CompGraph<'a>, name: String, args: &'b [ObjRef]) -> &'a[ObjRef] {
-    //
-    // }
+    pub fn add_map<'b>(self: &mut CompGraph<'a>, name: String, args: &'b [ObjRef], results: &'b [ObjRef]) {
+        assert!(args.len() == results.len());
+        self.ops.push(name); // TODO: only store unique names
+        let map = self.graph.add_node(Node::Map {opid: self.ops.len() - 1});
+        for i in 0..args.len() {
+            let res = self.graph.add_node(Node::Obj {objref: results[i], hosts: &[]});
+            self.graph.add_edge(self.objs[args[i] as usize], map, 0.0);
+            self.graph.add_edge(map, self.objs[results[i] as usize], 0.0);
+        }
+    }
     pub fn add_reduce<'b>(self: &mut CompGraph<'a>, name: String, args: &'b [ObjRef], result: ObjRef) {
-        self.ops.push(name);
+        self.ops.push(name); // TODO: only store unique names
         let reduce = self.graph.add_node(Node::Reduce {opid: self.ops.len() - 1});
         let res = self.graph.add_node(Node::Obj {objref: result, hosts: &[]});
         for arg in args {
-            self.graph.add_edge(self.objs[*arg], reduce, 0.0);
+            self.graph.add_edge(self.objs[*arg as usize], reduce, 0.0);
         }
         self.graph.add_edge(reduce, res, 0.0);
     }
@@ -97,6 +104,7 @@ pub fn to_dot<'a>(graph: &CompGraph<'a>) -> String {
         let label = match *weight {
             Node::Op { opid } => format!("label=\"{}\"", &graph.ops[opid]),
             Node::Obj { objref, hosts } => format!("label=\"{}\"", objref),
+            Node::Map { opid } => format!("label=\"{}\"", &graph.ops[opid]),
             Node::Reduce { opid } => format!("label=\"reduce {}\"", &graph.ops[opid])
         };
         builder.set_node_attrs(&id, &label);

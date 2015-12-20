@@ -1,6 +1,6 @@
 [package]
 name = "hermes"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Philipp Moritz <pcmoritz@gmail.com>"]
 
 [lib]
@@ -15,8 +15,8 @@ rand = "*"
 [dependencies.protobuf]
 git = "https://github.com/stepancheg/rust-protobuf.git"
 
-[dependencies.nanomsg]
-git = "https://github.com/thehydroimpulse/nanomsg.rs.git"
+[dependencies.zmq]
+git = "https://github.com/erickt/rust-zmq.git"
 
 [dependencies.petgraph]
 git = "https://github.com/bluss/petulant-avenger-graphlibrary"

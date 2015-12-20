@@ -1,182 +1,318 @@
 use std::collections::HashMap;
-use nanomsg::{Socket, Protocol};
+use zmq;
+use zmq::{Socket};
 
 use comm;
-use utils::{ObjRef, receive_message, send_message};
-use libc::{uint64_t, c_void};
+use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack};
 use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 
 pub type FnRef = usize; // Index of locally registered function
+pub type ObjStore = HashMap<ObjRef, Vec<u8>>; // collection of objects stored on the client
+
+pub enum Event {
+    Obj(ObjRef), // a new object becomes available
+    Invoke(comm::Call) // a new job request
+}
+
+#[derive(Clone, PartialEq)]
+pub enum State {
+    Processing {
+        call: comm::Call,
+        deps: Vec<ObjRef> // sorted
+    },
+    Waiting
+}
 
 pub struct Context {
-    client: Client,
-    socket: Socket
-}
+    zmq_ctx: zmq::Context,
 
-impl Context {
-    pub fn new(server_addr: String, client_addr: String) -> Context {
-        let mut socket = Socket::new(Protocol::Req).ok().unwrap();
-        let mut endpoint = socket.connect(&server_addr[..]).ok().unwrap();
-        if client_addr != "" {
-            println!("Connecting");
-            let mut reg = comm::ClientMessage::new();
-            reg.set_field_type(comm::ClientMessage_Type::TYPE_REGISTER);
-            reg.set_address(client_addr.clone());
-            let mut clientsocket = Socket::new(Protocol::Rep).ok().unwrap();
-            clientsocket.bind(&client_addr[..]).ok().unwrap();
-            thread::sleep_ms(10);
-            send_message::<comm::ClientMessage>(&mut socket, &mut reg);
-            endpoint.shutdown().unwrap();
-            socket = clientsocket;
-        }
-        Context { client: Client::new(), socket: socket }
-    }
-    pub fn client<'b>(self: &'b mut Context) -> &mut Client {
-        return &mut self.client;
-    }
-    pub fn socket<'b>(self: &'b mut Context) -> &mut Socket {
-        return &mut self.socket;
-    }
-}
-
-pub struct Client {
-    objects: HashMap<ObjRef, Vec<u8>>, // mapping from objrefs to data
+    objects: Arc<Mutex<ObjStore>>, // mapping from objrefs to data
     functions: HashMap<String, FnRef>, // mapping from function name to interpreter-local function reference
     types: HashMap<String, i32>, // mapping from type name to type id
 
-    state: Option<comm::Call>, // Some(call) if function call has just been evaluated and None otherwise
+    state: State, // Some(call) if function call has just been evaluated and None otherwise
     function: FnRef, // function that is currently active
     args: Vec<ObjRef>, // objrefs to the arguments of current function call
-    result: ObjRef // objref of result from current function call
+
+    notify_main: Receiver<Event>, // reply thread signals main thread
+    request: Socket,
+    workerid: WorkerID
 }
 
-impl Client {
-    pub fn new() -> Client {
-        Client { objects: HashMap::new(), functions: HashMap::new(), types: HashMap::new(), state: None, function: 0, args: Vec::new(), result: 0 }
-    }
-    pub fn add_object<'b>(self: &'b mut Client, objref: ObjRef, data: Vec<u8>) {
-        self.objects.insert(objref, data);
-    }
-    // DEPRECATED
-    pub fn get_object<'b>(self: &'b mut Client, objref: ObjRef) -> Option<Vec<u8>> {
-        return self.objects.get(&objref).and_then(|data| Some(data.to_vec()));
-    }
-    pub fn get_num_args<'b>(self: &'b Client) -> usize {
-        return self.args.len();
-    }
-    pub fn add_function<'b>(self: &'b mut Client, name: String) -> usize {
-        println!("registering function {}", name);
-        let idx = self.functions.len();
-        self.functions.insert(name, idx);
-        return idx;
-    }
-    pub fn get_function<'b>(self: &'b Client) -> FnRef {
-        return self.function;
-    }
-    pub fn get_arg_len<'b>(self: &'b Client, argidx: usize) -> Option<usize> {
-        return self.objects.get(&self.args[argidx]).and_then(|data| Some(data[..].len()));
-    }
-    pub fn get_arg_ptr<'b>(self: &'b Client, argidx: usize) -> Option<*const u8> {
-        return self.objects.get(&self.args[argidx]).and_then(|data| Some(data[..].as_ptr()));
-    }
-    pub fn add_type<'b>(self: &'b mut Client, name: String) {
-        let index = self.types.len();
-        self.types.insert(name, index as i32);
-    }
-    pub fn get_type<'b>(self: &'b mut Client, name: String) -> Option<i32> {
-        return self.types.get(&name).and_then(|&num| Some(num));
-    }
-    pub fn remote_call_function<'b>(self: &'b mut Client, socket: &mut Socket, name: String, args: &[ObjRef]) -> ObjRef {
-        let mut msg = comm::ClientMessage::new();
-        msg.set_field_type(comm::ClientMessage_Type::TYPE_INVOKE);
-        let mut call = comm::Call::new();
-        call.set_name(name);
-        call.set_args(args.iter().map(|arg| *arg as u64).collect());
-        msg.set_call(call);
-        send_message::<comm::ClientMessage>(socket, &mut msg);
-        let answer = receive_message::<comm::ServerMessage>(socket);
-        return answer.get_objref() as usize;
-    }
-    pub fn receive_args_and_prepare_call<'b>(self: &'b mut Client, socket: &mut Socket, name: String, args: &[ObjRef], result: ObjRef) {
-        // let reqargs = utils::args_to_send(args, |objref| !self.objects.contains_key(&objref));
-        loop {
-            println!("waiting for argument");
-            let message = receive_message::<comm::ServerMessage>(socket);
-            if message.get_field_type() == comm::ServerMessage_Type::TYPE_DONE {
-                break
-            }
-            let blob = message.get_blob();
-            let objref = blob.get_objref() as usize;
-            println!("received argument objref {}", objref);
-            self.add_object(objref, blob.get_data().to_vec());
-            send_ack(socket);
-        }
-        self.args = args.to_vec();
-        self.function = self.functions.get(&name).expect("function not found").clone();
-        self.result = result;
-    }
-    pub fn finish_request<'b>(self: &'b mut Client, socket: &'b mut Socket) {
-        match self.state.clone() { // TODO: remove the clone
-            Some(call) => {
-                let mut done = comm::ClientMessage::new();
-                done.set_field_type(comm::ClientMessage_Type::TYPE_DONE);
-                done.set_call(call.clone());
-                send_message::<comm::ClientMessage>(socket, &mut done);
-            }
-            None => {}
-        }
-    }
-    // process request by server; return value tells us if control should be given back to the
-    // interpreter, is required to set the self.state variable to an appropriate value
-    // returns if control should be given back to the interpreter
-    pub fn process_request<'b>(self: &'b mut Client, socket: &'b mut Socket) -> (bool, ObjRef) {
-        let msg = receive_message::<comm::ServerMessage>(socket);
-        match msg.get_field_type() {
-            comm::ServerMessage_Type::TYPE_INVOKE => {
-                let call = msg.get_call();
-                println!("server called {}", call.get_name().to_string());
-                // send ack
-                let mut ack = comm::ClientMessage::new();
-                ack.set_field_type(comm::ClientMessage_Type::TYPE_ACK);
-                ack.set_call(call.clone());
-                send_message::<comm::ClientMessage>(socket, &mut ack);
-                let args : Vec<usize> = call.get_args().iter().map(|arg| *arg as usize).collect();
-                self.receive_args_and_prepare_call(socket, call.get_name().to_string(), &args[..], call.get_result() as ObjRef);
-                self.state = Some(call.clone());
-                return (true, call.get_result() as ObjRef)
-            }
-            comm::ServerMessage_Type::TYPE_PUSH => {
-                // let blob = msg.get_blob();
-                // self.add_obj(blob.get_objref() as usize, blob.get_data().iter().map(|x| *x).collect());
-            }
-            comm::ServerMessage_Type::TYPE_PULL => {
-                println!("processing pull request");
-                let objref = msg.get_objref();
-                match self.get_object(msg.get_objref() as usize) {
-                    Some(data) => {
-                        let mut msg = comm::ClientMessage::new();
-                        msg.set_field_type(comm::ClientMessage_Type::TYPE_PUSH);
-                        let mut blob = comm::Blob::new();
-                        blob.set_objref(objref);
-                        blob.set_data(data);
-                        msg.set_blob(blob);
-                        send_message::<comm::ClientMessage>(socket, &mut msg);
+impl Context {
+    pub fn start_reply_thread(zmq_ctx: &mut zmq::Context, client_addr: &str, notify_main: Sender<Event>, objects: Arc<Mutex<ObjStore>>) {
+        let mut reply = zmq_ctx.socket(zmq::REP).unwrap();
+        reply.bind(client_addr).unwrap();
+
+        thread::spawn(move || {
+            loop {
+                let msg = receive_message(&mut reply);
+                match msg.get_field_type() {
+                    comm::MessageType::PUSH => {
+                        let blob = msg.get_blob();
+                        let objref = blob.get_objref();
+                        objects.lock().unwrap().insert(objref, blob.get_data().to_vec());
+                        send_ack(&mut reply);
+                        notify_main.send(Event::Obj(objref)).unwrap();
+                    },
+                    comm::MessageType::INVOKE => {
+                        notify_main.send(Event::Invoke(msg.get_call().clone())).unwrap();
+                        send_ack(&mut reply);
                     }
-                    None => {
-                        println!("objref not found on this client")
+                    _ => {
+                        error!("error, got {:?}", msg.get_field_type());
+                        error!("{:?}", msg.get_address());
                     }
                 }
             }
-            comm::ServerMessage_Type::TYPE_DONE => {
+        });
+    }
+    pub fn new(server_addr: String, client_addr: String) -> Context {
+        let mut zmq_ctx = zmq::Context::new();
+
+        let mut request = zmq_ctx.socket(zmq::REQ).unwrap();
+        request.connect(&server_addr[..]).unwrap();
+
+        let (reply_sender, reply_receiver) = mpsc::channel();
+
+        info!("connecting to server...");
+        let mut reg = comm::Message::new();
+        reg.set_field_type(comm::MessageType::REGISTER_CLIENT);
+        reg.set_address(client_addr.clone());
+
+        let objects = Arc::new(Mutex::new(HashMap::new()));
+
+        Context::start_reply_thread(&mut zmq_ctx, &client_addr[..], reply_sender, objects.clone());
+
+        thread::sleep_ms(10);
+
+        send_message(&mut request, &mut reg);
+        let ack = receive_message(&mut request);
+        info!("my workerid is {}", ack.get_workerid());
+        let workerid = ack.get_workerid() as WorkerID;
+
+        // the network thread listens to commands on the master subscription channel and serves the other client channels with data. It notifies the main thread if new data becomes available.
+
+        // do handshake with server and get client id, so we can communicate on the subscription channel
+
+        // let (main_sender, main_receiver) = mpsc::channel();
+        // let (network_sender, network_receiver) = mpsc::channel();
+        let mut clients: HashMap<String, Socket> = HashMap::new(); // other clients that are part of the cluster
+
+        let thread_objects = objects.clone();
+
+        thread::spawn(move || {
+            let mut zmq_ctx = zmq::Context::new();
+            let mut subscriber = Context::connect_network_thread(&mut zmq_ctx, workerid);
+
+            loop {
+                let msg = receive_subscription(&mut subscriber);
+
+                match msg.get_field_type() {
+                    comm::MessageType::REGISTER_CLIENT => {
+                        // push onto workers
+                        info!("connecting to client {}", msg.get_address());
+                        let mut other = zmq_ctx.socket(zmq::REQ).unwrap();
+                        other.connect(msg.get_address()).ok().unwrap();
+                        clients.insert(msg.get_address().into(), other);
+                        // new code: create new thread, insert it here
+                    }
+                    comm::MessageType::DELIVER => {
+                        let objref = msg.get_objref();
+                        let mut answer = comm::Message::new();
+                        answer.set_field_type(comm::MessageType::PUSH);
+                        let mut blob = comm::Blob::new();
+                        blob.set_objref(objref);
+                        let objs : MutexGuard<HashMap<ObjRef, Vec<u8>>> = thread_objects.lock().unwrap();
+                        let data = objs.get(&objref).and_then(|data| Some(data.to_vec())).expect("data not available on this client");
+                        blob.set_data(data);
+                        answer.set_blob(blob);
+                        let target = &mut clients.get_mut(msg.get_address()).expect("target client not found"); // shouldn't happen
+                        send_message(target, &mut answer);
+                        receive_ack(target);
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        return Context {
+            zmq_ctx: zmq_ctx,
+            objects: objects.clone(), functions: HashMap::new(), types: HashMap::new(),
+            state: State::Waiting, function: 0, args: Vec::new(),
+            notify_main: reply_receiver,
+            request: request,
+            workerid: workerid
+        }
+    }
+
+    fn connect_network_thread(zmq_ctx: &mut zmq::Context, workerid: WorkerID) -> Socket {
+        let mut subscriber = zmq_ctx.socket(zmq::SUB).unwrap();
+        subscriber.connect("tcp://localhost:5240").unwrap();
+        subscriber.set_subscribe(format!("{:0>#07}", workerid).as_bytes()).unwrap();
+
+        let mut setup = zmq_ctx.socket(zmq::REQ).unwrap();
+        setup.connect("tcp://localhost:5241").unwrap();
+        thread::sleep_ms(10);
+        // set up sub/pub socket
+        let mut msg = zmq::Message::new().unwrap();
+        subscriber.recv(&mut msg, 0).unwrap();
+
+        setup.send(b"joining", 0).unwrap();
+
+        info!("accepted server invitation");
+
+        return subscriber
+    }
+
+    pub fn add_object<'b>(self: &'b mut Context, objref: ObjRef, data: Vec<u8>) {
+        self.objects.lock().unwrap().insert(objref, data);
+    }
+    pub fn get_num_args<'b>(self: &'b Context) -> usize {
+        return self.args.len();
+    }
+    pub fn add_function<'b>(self: &'b mut Context, name: String) -> usize {
+        info!("registering function {}", name);
+        let idx = self.functions.len();
+        self.functions.insert(name.to_string(), idx);
+
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::REGISTER_FUNCTION);
+        msg.set_fnname(name.to_string());
+        msg.set_workerid(self.workerid as u64);
+        send_message(&mut self.request, &mut msg);
+        receive_ack(&mut self.request);
+
+        return idx;
+    }
+    pub fn get_function<'b>(self: &'b Context) -> FnRef {
+        return self.function;
+    }
+    // TODO: Make this more efficient, i.e. use only one lookup
+    pub fn get_obj_len<'b>(self: &'b Context, objref: ObjRef) -> Option<usize> {
+        return self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].len()));
+    }
+    pub fn get_obj_ptr<'b>(self: &'b Context, objref: ObjRef) -> Option<*const u8> {
+        return self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].as_ptr()));
+    }
+    pub fn get_arg_len<'b>(self: &'b Context, argidx: usize) -> Option<usize> {
+        return self.get_obj_len(self.args[argidx]);
+    }
+    pub fn get_arg_ptr<'b>(self: &'b Context, argidx: usize) -> Option<*const u8> {
+        // println!("getting pointer for object {}", self.args[argidx]);
+        return self.get_obj_ptr(self.args[argidx]);
+    }
+    pub fn add_type<'b>(self: &'b mut Context, name: String) {
+        let index = self.types.len();
+        self.types.insert(name, index as i32);
+    }
+    pub fn get_type<'b>(self: &'b mut Context, name: String) -> Option<i32> {
+        return self.types.get(&name).and_then(|&num| Some(num));
+    }
+    pub fn remote_call_function<'b>(self: &'b mut Context, name: String, args: &[ObjRef]) -> ObjRef {
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::INVOKE);
+        let mut call = comm::Call::new();
+        call.set_name(name);
+        call.set_args(args.to_vec());
+        msg.set_call(call);
+        send_message(&mut self.request, &mut msg);
+        let answer = receive_message(&mut self.request);
+        return answer.get_call().get_result();
+    }
+    pub fn pull_remote_object<'b>(self: &'b mut Context, objref: ObjRef) -> ObjRef {
+        {
+            let objects = self.objects.lock().unwrap();
+            if objects.contains_key(&objref) {
+                return objref;
             }
         }
-        self.state = None;
-        return (false, 0)
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::PULL);
+        msg.set_objref(objref);
+        msg.set_workerid(self.workerid as u64);
+        send_message(&mut self.request, &mut msg);
+        receive_ack(&mut self.request);
+        loop {
+            // println!("looping");
+            match self.notify_main.recv().unwrap() {
+                Event::Obj(pushedref) => {
+                    if pushedref == objref {
+                        return objref;
+                    }
+                }
+                _ => {}
+            }
+        }
     }
-}
+    pub fn finish_request<'b>(self: &'b mut Context) {
+        match self.state.clone() { // TODO: remove the clone
+            State::Processing{call, deps: _} => {
+                let mut done = comm::Message::new();
+                done.set_field_type(comm::MessageType::DONE);
+                done.set_call(call.clone());
+                done.set_workerid(self.workerid as u64);
+                send_message(&mut self.request, &mut done);
+                receive_ack(&mut self.request);
+                self.state = State::Waiting;
+            }
+            State::Waiting => {}
+        }
+    }
 
-pub fn send_ack(socket: &mut Socket) {
-    let mut ack = comm::ClientMessage::new();
-    ack.set_field_type(comm::ClientMessage_Type::TYPE_ACK);
-    send_message::<comm::ClientMessage>(socket, &mut ack);
+    pub fn client_step<'b>(self: &'b mut Context) -> ObjRef {
+        loop {
+            match self.notify_main.recv().unwrap() {
+                Event::Obj(objref) => {
+                    // if all elements for the current call are satisfied, evaluate it
+                    match self.state {
+                        State::Waiting => {},
+                        State::Processing {call: _, ref mut deps} => {
+                            match deps.binary_search(&objref) {
+                                Ok(idx) => {
+                                    deps.swap_remove(idx);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                },
+                Event::Invoke(call) => {
+                    assert!(self.state == State::Waiting);
+                    let mut args = vec!();
+                    {
+                        let objects = self.objects.lock().unwrap();
+                        for elem in call.get_args().iter() {
+                            if !objects.contains_key(elem) {
+                                args.push(*elem);
+                            }
+                        }
+                    }
+                    args.sort();
+                    args.dedup();
+                    self.state = State::Processing{call: call.clone(), deps: args};
+                    // if all elements for the current call are satisfied, evaluate it
+                }
+            }
+
+            match self.state {
+                State::Waiting => {},
+                State::Processing {ref call, ref deps} => {
+                    if deps.len() == 0 {
+                        // calling the function
+                        self.args = call.get_args().to_vec();
+                        let name = call.get_name().to_string();
+                        self.function = self.functions.get(&name).expect("function not found").clone();
+                        return call.get_result();
+                    }
+                }
+            }
+        }
+    }
 }

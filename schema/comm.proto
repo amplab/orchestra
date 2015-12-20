@@ -1,22 +1,27 @@
 // This is defining the communication module of Hermes
 
 // The master builds the computation graph and does the scheduling, but has no
-// contact with data (at the moment all data still goes through the server).
-// The messages it sends and receives are tiny, which allows us to scale up to
-// many clients. All data is referenced using so called objrefs. These are
-// remote references to objects, which might be implemented using a global id or
-// hashing. Each objref is associated with an immutable blob of data which for
-// fault tolerance and efficiency reasons is distributed among a number of
-// clients.
+// contact with data. The messages it sends and receives are very small, which
+// allows us to scale up to many clients. Data is typically referenced using so
+// called objrefs. These are remote references to objects, which might be
+// implemented using a global id or hashing. Each objref is associated with an
+// immutable blob of data which for fault tolerance and efficiency reasons is
+// distributed among a number of clients.
+
+message Arg {
+  optional uint64 objref = 1; // can either be call-by-reference for large objects
+  repeated bytes data = 2; // or call-by-value for small objects
+  optional uint64 typeinfo = 3; // if the argument is passed by value, this field holds type information
+}
 
 message Call {
   optional string name = 1;
   repeated uint64 args = 2;
-  optional uint64 result = 3;
+  optional uint64 result = 3; // typically a singleton, a list for map calls
   enum Type {
-    INVOKE_CALL = 1;
-    REDUCE_CALL = 2;
-    MAP_CALL = 3;
+    INVOKE_CALL = 1; // normal function call
+    MAP_CALL = 2; // perform a map
+    REDUCE_CALL = 3; // perform a reduce
   }
   optional Type type = 4;
 }
@@ -26,33 +31,24 @@ message Blob {
   optional bytes data = 2;
 }
 
-message ClientMessage {
-  enum Type {
-    TYPE_REGISTER = 1; // register this client with the server (uses address)
-    TYPE_INVOKE = 2; // client wants the master to invoke a distributed function call (uses call)
-    TYPE_ACK = 3; // client acknowledges that a distributed function call request arrived (no arguments)
-    TYPE_DONE = 4; // client signals to the master that the current function call is completed (?)
-    TYPE_PUSH = 5; // client delivers an object to another machine (uses blob)
-    TYPE_PULL = 6; // client tells server to initiate sending data from nearest client (uses objref)
-  };
-  optional Type type = 1; // type of the message (see above)
-  optional Call call = 2; // function call to be executed
-  optional string address = 3; // address of the client if we are registering
-  optional Blob blob = 4;
-  optional uint64 objref = 5;
+enum MessageType {
+  ACK = 1; // acknowledge a message
+  INVOKE = 2;  // invoke a distributed function call (uses call)
+  REGISTER_CLIENT = 3; // register a client (uses address)
+  REGISTER_FUNCTION = 4; // register a function (uses workerid and fnname)
+  PUSH = 5; // client delivers an object to another machine (uses blob)
+  PULL = 6; // client tells server to initiate sending data from nearest client (uses objref)
+  HELLO = 7; // for registering the subscription channel
+  DELIVER = 8; // server wants the client to deliver an object to a client (uses objref and address)
+  DONE = 9; // client signals to the server that the current function call is completed
 }
 
-message ServerMessage {
-  enum Type {
-    TYPE_INVOKE = 1; // server wants to invoke a function call on the client
-    TYPE_PUSH = 2; // server delivers an argument to the client
-    TYPE_PULL = 3; // server wants to pull a result from the client (later renamed to TYPE_DISTRIBUTE)
-    TYPE_DONE = 4; // server tells client that function call has finished
-    // TYPE_ERROR = 5; // server tells the client that there was an error
-  }
-  optional Type type = 1;
-  optional Call call = 2;
-  optional Blob blob = 3;
-  optional string address = 4; // address of the client stuff should be pulled from
-  optional uint64 objref = 5; // objref that should be pulled or is being returned by the function call
+message Message {
+  optional MessageType type = 1; // type of the message
+  optional Call call = 2; // function call to be executed
+  optional string address = 3; // address of the client we are registering or delivering data to
+  optional Blob blob = 4;
+  optional uint64 objref = 5;
+  optional uint64 workerid = 6; // uniquely identify worker
+  optional string fnname = 7;
 }

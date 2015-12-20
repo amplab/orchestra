@@ -10,7 +10,7 @@ context = hermes.HermesContext("tcp://127.0.0.1:1234", "tcp://127.0.0.1:" + args
 
 @hermes.distributed()
 def create_matrix():
-    return np.random.rand(3, 3)
+    return np.random.rand(1000, 1000)
 
 @hermes.distributed()
 def create_dist_matrix():
@@ -18,11 +18,12 @@ def create_dist_matrix():
     for i in range(2):
         for j in range(2):
             objrefs[i,j] = context.call("create_matrix")
+            print "create_dist_matrix", objrefs[i,j]
     return objrefs
 
 @hermes.distributed()
 def pairwise_reduce(*matrices):
-    result = np.zeros((3, 3))
+    result = np.zeros((1000, 1000))
     k = len(matrices) / 2
     for i in range(k):
         result += np.dot(matrices[i], matrices[k+i])
@@ -42,5 +43,8 @@ context.register("create_matrix", create_matrix, hermes.Tensor)
 context.register("create_dist_matrix", create_dist_matrix, hermes.Tensor)
 context.register("pairwise_reduce", pairwise_reduce, hermes.Tensor, hermes.Tensor, hermes.Tensor, hermes.Tensor, hermes.Tensor)
 context.register("matrix_multiply", matrix_multiply, hermes.Tensor, hermes.Tensor, hermes.Tensor)
+
+# import IPython
+# IPython.embed()
 
 context.main_loop()

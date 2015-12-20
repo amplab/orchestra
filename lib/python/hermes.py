@@ -66,6 +66,13 @@ def distributed():
 class HermesContext:
     def __init__(self, server_addr, client_addr):
         self.lib = CDLL("libhermes.so")
+        self.lib.hermes_get_arg_len.restype = c_size_t
+        self.lib.hermes_get_arg_ptr.restype = c_void_p
+        self.lib.hermes_get_obj_len.restype = c_size_t
+        self.lib.hermes_get_obj_ptr.restype = c_void_p
+        self.lib.hermes_num_args.restype = c_size_t
+        self.lib.hermes_step.restype = c_size_t
+        self.lib.hermes_pull.restype = c_size_t
         self.context = self.lib.hermes_create_context(server_addr, client_addr)
         self.functions = []
         self.arg_types = []
@@ -90,6 +97,18 @@ class HermesContext:
             arguments[i] = arg
         return self.lib.hermes_call(self.context, name, arguments, num_args)
 
+    # TODO(pcmoritz): Store type information on the server and the client to get rid of the type parameter
+    def pull(self, typ, objref):
+        print "before pull"
+        objref = self.lib.hermes_pull(self.context, objref)
+        print "after pull"
+        p = self.lib.hermes_get_obj_ptr(self.context, objref)
+        l = self.lib.hermes_get_obj_len(self.context, objref)
+        data = string_at(p, l)
+        t = typ()
+        t.ParseFromString(data)
+        return python_object(t)
+
     def main_loop(self):
         while True:
             objref = self.lib.hermes_step(self.context)
@@ -109,10 +128,12 @@ class HermesContext:
 
 
 if __name__ == "__main__":
-    context = HermesContext("tcp://127.0.0.1:1234", "")
+    context = HermesContext("tcp://127.0.0.1:1234", "tcp://127.0.0.1:1239")
 
     dist = context.call("create_dist_matrix")
     mul = context.call("matrix_multiply", dist, dist)
 
-    import IPython
-    IPython.embed()
+    # import IPython
+    # IPython.embed()
+
+    context.pull(Tensor, mul)

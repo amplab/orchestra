@@ -1,10 +1,13 @@
+use comm;
 use protobuf;
 use protobuf::Message;
 use protobuf::core::MessageStatic;
-use nanomsg::Socket;
-use std::io::{Read, Write};
+use zmq;
+use zmq::{Socket};
+use std::io::Cursor;
 
-pub type ObjRef = usize;
+pub type ObjRef = u64;
+pub type WorkerID = usize;
 
 // Given a predicate `absent` that can test if an object is unavailable on the client, compute which
 // objects fom `args` still need to be send so the function call can be invoked.
@@ -35,22 +38,41 @@ fn test_args_to_send() {
     assert_eq!(res, vec!(3, 5));
 }
 
-pub fn make_message<M: Message>(message: &M) -> Vec<u8> {
+pub fn make_message(message: &comm::Message) -> Vec<u8> {
     let mut buf : Vec<u8> = Vec::new();
     message.write_to_writer(&mut buf).unwrap();
     return buf;
 }
 
-pub fn send_message<M: Message>(socket: &mut Socket, message: &mut M) {
-    let buff = make_message::<M>(message);
-    socket.write_all(buff.as_slice()).unwrap();
-    socket.flush().unwrap();
+pub fn send_message(socket: &mut Socket, message: &mut comm::Message) {
+    let buff = make_message(message);
+    socket.send(buff.as_slice(), 0).unwrap();
+    // socket.flush().unwrap();
 }
 
-pub fn receive_message<M : MessageStatic>(socket: &mut Socket) -> M {
-    use std::io::Cursor;
-    let mut buf = Vec::new();
-    socket.read_to_end(&mut buf).unwrap();
-    let mut read_buf = Cursor::new(buf);
-    return protobuf::parse_from_reader::<M>(&mut read_buf).unwrap();
+pub fn receive_message(socket: &mut Socket) -> comm::Message {
+    let mut msg = zmq::Message::new().unwrap();
+    socket.recv(&mut msg, 0).unwrap();
+    let mut read_buf = Cursor::new(msg.as_mut());
+    return protobuf::parse_from_reader(&mut read_buf).unwrap();
+    // return protobuf::parse_from_reader::<M>(msg.as_mut()).unwrap();
+}
+
+pub fn receive_subscription(subscriber: &mut Socket) -> comm::Message {
+    let mut msg = zmq::Message::new().unwrap();
+    subscriber.recv(&mut msg, 0).unwrap();
+    let mut read_buf = Cursor::new(msg.as_mut());
+    read_buf.set_position(7);
+    return protobuf::parse_from_reader(&mut read_buf).unwrap();
+}
+
+pub fn send_ack(socket: &mut Socket) {
+    let mut ack = comm::Message::new();
+    ack.set_field_type(comm::MessageType::ACK);
+    send_message(socket, &mut ack);
+}
+
+pub fn receive_ack(socket: &mut Socket) {
+    let ack = receive_message(socket);
+    assert!(ack.get_field_type() == comm::MessageType::ACK);
 }
