@@ -90,6 +90,18 @@ pub extern "C" fn hermes_pull(context: *mut Context, objref: size_t) -> size_t {
 }
 
 #[no_mangle]
+pub extern "C" fn hermes_debug_info(context: *mut Context) {
+    unsafe {
+        let msg = (*context).pull_debug_info();
+        println!("worker queue: {:?}", msg.get_scheduler_info().get_worker_queue());
+        println!("job queue:");
+        for call in msg.get_scheduler_info().get_job_queue() {
+            println!("call: {:?}, {:?} -> {}", call.get_name(), call.get_args(), call.get_result());
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn hermes_step(context: *mut Context) -> size_t {
     unsafe {
         (*context).finish_request();

@@ -17,7 +17,8 @@ pub type ObjStore = HashMap<ObjRef, Vec<u8>>; // collection of objects stored on
 
 pub enum Event {
     Obj(ObjRef), // a new object becomes available
-    Invoke(comm::Call) // a new job request
+    Invoke(comm::Call), // a new job request
+    Debug(comm::Message) // for debugging purposes
 }
 
 #[derive(Clone, PartialEq)]
@@ -64,7 +65,7 @@ impl Context {
                     comm::MessageType::INVOKE => {
                         notify_main.send(Event::Invoke(msg.get_call().clone())).unwrap();
                         send_ack(&mut reply);
-                    }
+                    },
                     _ => {
                         error!("error, got {:?}", msg.get_field_type());
                         error!("{:?}", msg.get_address());
@@ -79,7 +80,7 @@ impl Context {
         let mut request = zmq_ctx.socket(zmq::REQ).unwrap();
         request.connect(&server_addr[..]).unwrap();
 
-        let (reply_sender, reply_receiver) = mpsc::channel();
+        let (reply_sender, reply_receiver) = mpsc::channel(); // TODO: rename this
 
         info!("connecting to server...");
         let mut reg = comm::Message::new();
@@ -88,7 +89,7 @@ impl Context {
 
         let objects = Arc::new(Mutex::new(HashMap::new()));
 
-        Context::start_reply_thread(&mut zmq_ctx, &client_addr[..], reply_sender, objects.clone());
+        Context::start_reply_thread(&mut zmq_ctx, &client_addr[..], reply_sender.clone(), objects.clone());
 
         thread::sleep_ms(10);
 
@@ -136,7 +137,10 @@ impl Context {
                         let target = &mut clients.get_mut(msg.get_address()).expect("target client not found"); // shouldn't happen
                         send_message(target, &mut answer);
                         receive_ack(target);
-                    }
+                    },
+                    comm::MessageType::DEBUG => {
+                        reply_sender.send(Event::Debug(msg)).unwrap();
+                    },
                     _ => {}
                 }
             }
@@ -251,6 +255,21 @@ impl Context {
             }
         }
     }
+    pub fn pull_debug_info<'b>(self: &'b mut Context) -> comm::Message {
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::DEBUG);
+        msg.set_workerid(self.workerid as u64);
+        send_message(&mut self.request, &mut msg);
+        receive_ack(&mut self.request);
+        loop {
+            match self.notify_main.recv().unwrap() {
+                Event::Debug(msg) => {
+                    return msg;
+                },
+                _ => {}
+            }
+        }
+    }
     pub fn finish_request<'b>(self: &'b mut Context) {
         match self.state.clone() { // TODO: remove the clone
             State::Processing{call, deps: _} => {
@@ -298,7 +317,8 @@ impl Context {
                     args.dedup();
                     self.state = State::Processing{call: call.clone(), deps: args};
                     // if all elements for the current call are satisfied, evaluate it
-                }
+                },
+                _ => {}
             }
 
             match self.state {

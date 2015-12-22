@@ -13,7 +13,8 @@ extern crate zmq;
 pub mod comm;
 mod types;
 mod graph;
-mod server;
+pub mod server;
+pub mod scheduler;
 pub mod utils;
 
 fn main() {

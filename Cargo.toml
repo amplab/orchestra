@@ -4,6 +4,7 @@ version = "0.2.0"
 authors = ["Philipp Moritz <pcmoritz@gmail.com>"]
 
 [lib]
+name = "hermeslib"
 crate-type = ["dylib"]
 
 [dependencies]

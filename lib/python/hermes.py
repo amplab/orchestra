@@ -65,7 +65,7 @@ def distributed():
 
 class HermesContext:
     def __init__(self, server_addr, client_addr):
-        self.lib = CDLL("libhermes.so")
+        self.lib = CDLL("libhermeslib.so")
         self.lib.hermes_get_arg_len.restype = c_size_t
         self.lib.hermes_get_arg_ptr.restype = c_void_p
         self.lib.hermes_get_obj_len.restype = c_size_t
@@ -109,6 +109,9 @@ class HermesContext:
         t.ParseFromString(data)
         return python_object(t)
 
+    def debug_info(self):
+        self.lib.hermes_debug_info(self.context)
+
     def main_loop(self):
         while True:
             objref = self.lib.hermes_step(self.context)
@@ -133,7 +136,9 @@ if __name__ == "__main__":
     dist = context.call("create_dist_matrix")
     mul = context.call("matrix_multiply", dist, dist)
 
-    # import IPython
-    # IPython.embed()
+    context.debug_info()
 
     context.pull(Tensor, mul)
+
+    # import IPython
+    # IPython.embed()

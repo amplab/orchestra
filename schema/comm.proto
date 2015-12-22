@@ -1,4 +1,4 @@
-// This is defining the communication module of Hermes
+// This file is defining the communication module of Hermes
 
 // The master builds the computation graph and does the scheduling, but has no
 // contact with data. The messages it sends and receives are very small, which
@@ -31,6 +31,17 @@ message Blob {
   optional bytes data = 2;
 }
 
+message PullInfo {
+  optional uint64 workerid = 1;
+  optional uint64 objref = 2;
+}
+
+message SchedulerInfo {
+  repeated uint64 worker_queue = 1;
+  repeated Call job_queue = 2;
+  repeated PullInfo pull_queue = 3;
+}
+
 enum MessageType {
   ACK = 1; // acknowledge a message
   INVOKE = 2;  // invoke a distributed function call (uses call)
@@ -41,6 +52,7 @@ enum MessageType {
   HELLO = 7; // for registering the subscription channel
   DELIVER = 8; // server wants the client to deliver an object to a client (uses objref and address)
   DONE = 9; // client signals to the server that the current function call is completed
+  DEBUG = 10; // sending and receiving debug info
 }
 
 message Message {
@@ -51,4 +63,5 @@ message Message {
   optional uint64 objref = 5;
   optional uint64 workerid = 6; // uniquely identify worker
   optional string fnname = 7;
+  optional SchedulerInfo scheduler_info = 8;
 }
