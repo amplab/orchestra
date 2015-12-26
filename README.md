@@ -17,7 +17,7 @@ python matrix_multiply.py 1235
 and
 
 ```bash
-python matrix_multiply 1236
+python matrix_multiply.py 1236
 ```
 
 Now, from the `lib/python` directory you can run
