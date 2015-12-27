@@ -118,7 +118,7 @@ impl Scheduler {
           Event::Worker(workerid) => {
             match self.find_next_job(workerid, &job_queue) {
               Some(jobidx) => {
-                let job = job_queue.swap_front_remove(jobidx).unwrap();
+                let job = job_queue.swap_remove_front(jobidx).unwrap();
                 Scheduler::send_function_call(&mut workers, workerid, job);
               }
               None => {
@@ -129,7 +129,7 @@ impl Scheduler {
           Event::Job(job) => {
             match self.find_next_worker(&job, &worker_queue) {
               Some(workeridx) => {
-                let workerid = worker_queue.swap_front_remove(workeridx).unwrap();
+                let workerid = worker_queue.swap_remove_front(workeridx).unwrap();
                 Scheduler::send_function_call(&mut workers, workerid, job);
               }
               None => {
