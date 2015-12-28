@@ -58,7 +58,9 @@ impl Context {
                     comm::MessageType::PUSH => {
                         let blob = msg.get_blob();
                         let objref = blob.get_objref();
-                        objects.lock().unwrap().insert(objref, blob.get_data().to_vec());
+                        {
+                            objects.lock().unwrap().insert(objref, blob.get_data().to_vec());
+                        }
                         send_ack(&mut reply);
                         notify_main.send(Event::Obj(objref)).unwrap();
                     },
@@ -130,8 +132,10 @@ impl Context {
                         answer.set_field_type(comm::MessageType::PUSH);
                         let mut blob = comm::Blob::new();
                         blob.set_objref(objref);
-                        let objs : MutexGuard<HashMap<ObjRef, Vec<u8>>> = thread_objects.lock().unwrap();
-                        let data = objs.get(&objref).and_then(|data| Some(data.to_vec())).expect("data not available on this client");
+                        let data = {
+                            let objs : MutexGuard<HashMap<ObjRef, Vec<u8>>> = thread_objects.lock().unwrap();
+                            objs.get(&objref).and_then(|data| Some(data.to_vec())).expect("data not available on this client")
+                        };
                         blob.set_data(data);
                         answer.set_blob(blob);
                         let target = &mut clients.get_mut(msg.get_address()).expect("target client not found"); // shouldn't happen
@@ -200,10 +204,12 @@ impl Context {
     }
     // TODO: Make this more efficient, i.e. use only one lookup
     pub fn get_obj_len<'b>(self: &'b Context, objref: ObjRef) -> Option<usize> {
-        return self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].len()));
+        let result = self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].len()));
+        return result;
     }
     pub fn get_obj_ptr<'b>(self: &'b Context, objref: ObjRef) -> Option<*const u8> {
-        return self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].as_ptr()));
+        let result = self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].as_ptr()));
+        return result;
     }
     pub fn get_arg_len<'b>(self: &'b Context, argidx: usize) -> Option<usize> {
         return self.get_obj_len(self.args[argidx]);
@@ -228,7 +234,22 @@ impl Context {
         msg.set_call(call);
         send_message(&mut self.request, &mut msg);
         let answer = receive_message(&mut self.request);
-        return answer.get_call().get_result();
+        let result = answer.get_call().get_result();
+        assert!(result.len() == 1);
+        return result[0];
+    }
+    // TODO: Remove duplication between remote_call_function and remote_call_map
+    pub fn remote_call_map<'b>(self: &'b mut Context, name: String, args: &[ObjRef]) -> Vec<ObjRef> {
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::INVOKE);
+        let mut call = comm::Call::new();
+        call.set_field_type(comm::Call_Type::MAP_CALL);
+        call.set_name(name);
+        call.set_args(args.to_vec());
+        msg.set_call(call);
+        send_message(&mut self.request, &mut msg);
+        let answer = receive_message(&mut self.request);
+        return answer.get_call().get_result().to_vec();
     }
     pub fn pull_remote_object<'b>(self: &'b mut Context, objref: ObjRef) -> ObjRef {
         {
@@ -289,6 +310,15 @@ impl Context {
         loop {
             match self.notify_main.recv().unwrap() {
                 Event::Obj(objref) => {
+                    // TODO: Make this more efficient:
+                    // START
+                    let mut acc = comm::Message::new();
+                    acc.set_field_type(comm::MessageType::ACC);
+                    acc.set_workerid(self.workerid as u64);
+                    acc.set_objref(objref);
+                    send_message(&mut self.request, &mut acc);
+                    let answer = receive_message(&mut self.request);
+                    // END
                     // if all elements for the current call are satisfied, evaluate it
                     match self.state {
                         State::Waiting => {},
@@ -303,6 +333,7 @@ impl Context {
                     }
                 },
                 Event::Invoke(call) => {
+                    info!("starting to evaluate {:?}", call.get_name());
                     assert!(self.state == State::Waiting);
                     let mut args = vec!();
                     {
@@ -315,6 +346,7 @@ impl Context {
                     }
                     args.sort();
                     args.dedup();
+                    info!("need args {:?}", args);
                     self.state = State::Processing{call: call.clone(), deps: args};
                     // if all elements for the current call are satisfied, evaluate it
                 },
@@ -329,7 +361,9 @@ impl Context {
                         self.args = call.get_args().to_vec();
                         let name = call.get_name().to_string();
                         self.function = self.functions.get(&name).expect("function not found").clone();
-                        return call.get_result();
+                        let result = call.get_result();
+                        assert!(result.len() == 1);
+                        return result[0]
                     }
                 }
             }

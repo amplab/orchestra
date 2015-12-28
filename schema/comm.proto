@@ -17,7 +17,7 @@ message Arg {
 message Call {
   optional string name = 1;
   repeated uint64 args = 2;
-  optional uint64 result = 3; // typically a singleton, a list for map calls
+  repeated uint64 result = 3; // typically a singleton, a list for map calls
   enum Type {
     INVOKE_CALL = 1; // normal function call
     MAP_CALL = 2; // perform a map
@@ -36,10 +36,16 @@ message PullInfo {
   optional uint64 objref = 2;
 }
 
+message ObjInfo {
+  optional uint64 objref = 1;
+  repeated uint64 workerid = 2;
+}
+
 message SchedulerInfo {
   repeated uint64 worker_queue = 1;
   repeated Call job_queue = 2;
   repeated PullInfo pull_queue = 3;
+  repeated ObjInfo objtable = 4;
 }
 
 enum MessageType {
@@ -53,6 +59,7 @@ enum MessageType {
   DELIVER = 8; // server wants the client to deliver an object to a client (uses objref and address)
   DONE = 9; // client signals to the server that the current function call is completed
   DEBUG = 10; // sending and receiving debug info
+  ACC = 11; // accept the delivery of an object
 }
 
 message Message {

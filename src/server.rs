@@ -18,6 +18,7 @@ use std::thread;
 use std::sync::{Arc, RwLock, Mutex, MutexGuard, RwLockReadGuard};
 use std::collections::HashMap;
 use protobuf::Message;
+use std::iter::Iterator;
 
 /// Contains informations about worker.
 pub struct Worker {
@@ -128,9 +129,8 @@ impl WorkerPool {
       let range = Range::new(0, objtable.lock().unwrap()[objref as usize].len());
       let idx = range.ind_sample(&mut rng);
       let pullid = objtable.lock().unwrap()[objref as usize][idx];
-      info!("delivering object from {} to {}, addr {}", pullid, workerid, &workers.read().unwrap()[workerid].addr);
+      info!("delivering object {} from {} to {}, addr {}", objref, pullid, workerid, &workers.read().unwrap()[workerid].addr);
       WorkerPool::send_deliver_request(pullid, &workers.read().unwrap()[workerid].addr, objref, &publish_notify);
-      info!("delivery successful");
     }
   }
 
@@ -151,9 +151,16 @@ impl WorkerPool {
         match request.get_field_type() {
           comm::MessageType::INVOKE => {
             // orchestrate packages being sent to worker node, start the work there
-            send_function_call(&mut socket, request.get_call().get_name(), request.get_call().get_args(), request.get_call().get_result());
+            let results = request.get_call().get_result();
+            assert!(results.len() == 1);
+            send_function_call(&mut socket, request.get_call().get_name(), request.get_call().get_args(), results[0]);
             receive_ack(&mut socket); // TODO: Avoid this round trip
-            for objref in request.get_call().get_args() {
+            // deduplicate: (TODO: get rid of inefficiency):
+            let mut args = request.get_call().get_args().to_vec();
+            args.sort();
+            args.dedup();
+            info!("sending args {:?}", request.get_call().get_args());
+            for objref in args.iter() {
               WorkerPool::deliver_object(workerid, *objref, &workers, &objtable, &publish_notify)
             }
           },
@@ -209,7 +216,7 @@ impl<'a> Server<'a> {
   /// Start the server's main loop.
   pub fn main_loop<'b>(self: &'b mut Server<'a>) {
     let mut socket = self.zmq_ctx.socket(zmq::REP).ok().unwrap();
-    socket.bind("tcp://127.0.0.1:1234").ok().unwrap();
+    socket.bind("tcp://127.0.0.1:1234").ok().unwrap(); // TODO: Put into config file and give error message
     loop {
       self.process_request(&mut socket);
     }
@@ -225,6 +232,7 @@ impl<'a> Server<'a> {
 
   /// Tell the server that a worker holds a certain object.
   pub fn register_result<'b>(self: &'b mut Server<'a>, objref: ObjRef, workerid: WorkerID) {
+    // TODO: Keep vector sorted while inserting
     self.objtable.lock().unwrap()[objref as usize].push(workerid);
   }
 
@@ -235,12 +243,49 @@ impl<'a> Server<'a> {
     return result;
   }
 
+  /// Add a map call to the computation graph.
+  pub fn add_map<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b [ObjRef]) -> Vec<ObjRef> {
+    // TODO: Do this with only one lock
+    let mut result = Vec::new();
+    for arg in args {
+      let objref = self.register_new_object();
+      result.push(objref);
+    }
+    // TODO: add the op here
+    return result;
+  }
+
+  /// Add a reduce call to the computation graph.
+  pub fn add_reduce<'b>(self: &'b mut Server<'a>, fname: String, args: &'b [ObjRef]) -> ObjRef {
+      let objref = self.register_new_object();
+      // TODO: add the op here
+      return objref;
+  }
+
   /// Add a worker's request for evaluation to the computation graph and notify the scheduler.
   pub fn add_request<'b>(self: &'b mut Server<'a>, call: &'b comm::Call) -> comm::Message {
-    let objref = self.add_call(call.get_name().into(), call.get_args());
     let mut call = call.clone();
-    call.set_result(objref);
-    self.workerpool.queue_job(call.clone()); // can we get rid of this clone?
+    if call.get_field_type() == comm::Call_Type::INVOKE_CALL {
+      let objref = self.add_call(call.get_name().into(), call.get_args());
+      call.set_result(vec!(objref));
+      self.workerpool.queue_job(call.clone()); // can we get rid of this clone?
+    }
+    if call.get_field_type() == comm::Call_Type::MAP_CALL {
+      let objrefs = self.add_map(call.get_name().into(), call.get_args());
+      // Add to the scheduler
+      for (arg, res) in call.get_args().iter().zip(objrefs.iter()) {
+        let mut c = comm::Call::new();
+        c.set_args(vec!(*arg));
+        c.set_result(vec!(*res));
+        c.set_name(call.get_name().into());
+        // INVOKE_CALL is already the default
+        self.workerpool.queue_job(c);
+      }
+      call.set_result(objrefs);
+    }
+    if call.get_field_type() == comm::Call_Type::REDUCE_CALL {
+
+    }
     // add obj refs here
     let mut message = comm::Message::new();
     message.set_field_type(comm::MessageType::DONE);
@@ -294,10 +339,17 @@ impl<'a> Server<'a> {
       },
       comm::MessageType::DONE => {
         send_ack(socket);
-        self.register_result(msg.get_call().get_result(), msg.get_workerid() as WorkerID);
+        let result = msg.get_call().get_result();
+        assert!(result.len() == 1);
+        self.register_result(result[0], msg.get_workerid() as WorkerID);
         self.workerpool.scheduler_notify.send(scheduler::Event::Worker(msg.get_workerid() as usize)).unwrap();
-        self.workerpool.scheduler_notify.send(scheduler::Event::Obj(msg.get_call().get_result())).unwrap();
+        self.workerpool.scheduler_notify.send(scheduler::Event::Obj(result[0])).unwrap();
       },
+      comm::MessageType::ACC => {
+        send_ack(socket);
+        self.objtable.lock().unwrap()[msg.get_objref() as usize].push(msg.get_workerid() as usize);
+        info!("delivery of {} to {} successful", msg.get_objref(), msg.get_workerid());
+      }
       comm::MessageType::DEBUG => {
         info!("received debug request");
         send_ack(socket);
@@ -319,7 +371,7 @@ pub fn send_function_call(socket: &mut Socket, name: &str, arguments: &[ObjRef],
   call.set_field_type(comm::Call_Type::INVOKE_CALL);
   call.set_name(name.into());
   call.set_args(arguments.to_vec());
-  call.set_result(result);
+  call.set_result(vec!(result));
   message.set_call(call);
   send_message(socket, &mut message);
 }

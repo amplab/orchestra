@@ -97,6 +97,14 @@ class HermesContext:
             arguments[i] = arg
         return self.lib.hermes_call(self.context, name, arguments, num_args)
 
+    def map(self, name, list):
+        num_args = len(list)
+        arguments_type = num_args * c_uint64
+        arguments = arguments_type()
+        for (i, arg) in enumerate(list):
+            arguments[i] = arg
+        self.lib.hermes_map(self.context, name, arguments, num_args)
+
     # TODO(pcmoritz): Store type information on the server and the client to get rid of the type parameter
     def pull(self, typ, objref):
         print "before pull"
@@ -122,6 +130,7 @@ class HermesContext:
                 p = self.lib.hermes_get_arg_ptr(self.context, i)
                 l = self.lib.hermes_get_arg_len(self.context, i)
                 data = string_at(p, l)
+                print i
                 protodata = arg_types[i]()
                 protodata.ParseFromString(data)
                 args.append(protodata)
@@ -129,16 +138,29 @@ class HermesContext:
             result = func(*args).SerializeToString()
             self.lib.hermes_store_result(self.context, objref, result, len(result))
 
+    def assemble(self, objref):
+        """Assemble a tensor on this node from a distributed tensor object reference."""
+        dist_array = self.pull(Tensor, objref)
+        return np.vstack([np.hstack([self.pull(Tensor, objref) for objref in row]) for row in dist_array])
 
 if __name__ == "__main__":
-    context = HermesContext("tcp://127.0.0.1:1234", "tcp://127.0.0.1:1239")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('port', type=str, help='the port to listen at')
+    parser.add_argument('console', type=int, help='open a console?')
+    args = parser.parse_args()
+
+    print "args.console is ", args.console
+
+    context = HermesContext("tcp://127.0.0.1:1234", "tcp://127.0.0.1:" + args.port)
+
+    if args.console == 1:
+        import IPython
+        IPython.embed()
 
     dist = context.call("create_dist_matrix")
+
     mul = context.call("matrix_multiply", dist, dist)
 
-    context.debug_info()
+    context.assemble(dist)
 
-    context.pull(Tensor, mul)
-
-    # import IPython
-    # IPython.embed()
+    context.assemble(mul)

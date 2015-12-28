@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
-use std::sync::{Arc, RwLock, Mutex, MutexGuard, RwLockReadGuard};
+use std::sync::{Arc, RwLock, Mutex, MutexGuard};
 use comm;
 use utils::{WorkerID, ObjRef, ObjTable, FnTable};
 use server::Worker;
@@ -45,6 +45,7 @@ impl Scheduler {
   }
 
   fn send_function_call(workers: &Vec<Sender<comm::Message>>, workerid: WorkerID, job: comm::Call) {
+    info!("scheduling function call {} on worker {}", job.get_name(), workerid);
     let mut msg = comm::Message::new();
     msg.set_field_type(comm::MessageType::INVOKE);
     msg.set_call(job);
@@ -59,17 +60,28 @@ impl Scheduler {
     workers[workerid].send(msg).unwrap();
   }
 
-  fn send_debugging_info(socket: &Sender<comm::Message>, worker_queue: &VecDeque<WorkerID>, job_queue: &VecDeque<comm::Call>) {
+  fn send_debugging_info(self: &Scheduler, socket: &Sender<comm::Message>, worker_queue: &VecDeque<WorkerID>, job_queue: &VecDeque<comm::Call>) {
     let mut scheduler_info = comm::SchedulerInfo::new();
     scheduler_info.set_worker_queue(worker_queue.iter().map(|x| *x as u64).collect());
-	let mut jobs = Vec::new();
-	for job in job_queue.iter() {
-		jobs.push(job.clone());
-	}
-	scheduler_info.set_job_queue(RepeatedField::from_vec(jobs));
+    let mut jobs = Vec::new();
+    for job in job_queue.iter() {
+      jobs.push(job.clone());
+    }
+    scheduler_info.set_job_queue(RepeatedField::from_vec(jobs));
+    let objtable = self.objtable.lock().unwrap();
+    let mut objs = Vec::new();
+    for (objref, workers) in objtable.iter().enumerate() {
+      let mut info = comm::ObjInfo::new();
+      info.set_objref(objref as u64);
+      let workers : &Vec<usize> = workers;
+      info.set_workerid((*workers).iter().map(|x| *x as u64).collect());
+      objs.push(info);
+    }
+    scheduler_info.set_objtable(RepeatedField::from_vec(objs));
     let mut msg = comm::Message::new();
     msg.set_field_type(comm::MessageType::DEBUG);
-	msg.set_scheduler_info(scheduler_info);
+    msg.set_scheduler_info(scheduler_info);
+
     socket.send(msg).unwrap();
   }
 
@@ -159,7 +171,7 @@ impl Scheduler {
             workers[workerid] = incoming;
           },
           Event::Debug(workerid) => {
-            Scheduler::send_debugging_info(&workers[workerid], &worker_queue, &job_queue);
+            self.send_debugging_info(&workers[workerid], &worker_queue, &job_queue);
           }
         }
       }

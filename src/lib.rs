@@ -85,6 +85,19 @@ pub extern "C" fn hermes_call(context: *mut Context, name: *const c_char, argume
 }
 
 #[no_mangle]
+pub extern "C" fn hermes_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t) -> size_t {
+    let name = string_from_c(name);
+    let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
+    unsafe {
+        let result = (*context).remote_call_map(name, args);
+        for elem in result {
+            println!("{:?}", elem);
+        }
+    };
+    return 0;
+}
+
+#[no_mangle]
 pub extern "C" fn hermes_pull(context: *mut Context, objref: size_t) -> size_t {
     unsafe { return (*context).pull_remote_object(objref); }
 }
@@ -96,7 +109,11 @@ pub extern "C" fn hermes_debug_info(context: *mut Context) {
         println!("worker queue: {:?}", msg.get_scheduler_info().get_worker_queue());
         println!("job queue:");
         for call in msg.get_scheduler_info().get_job_queue() {
-            println!("call: {:?}, {:?} -> {}", call.get_name(), call.get_args(), call.get_result());
+            println!("call: {:?}, {:?} -> {:?}", call.get_name(), call.get_args(), call.get_result());
+        }
+        println!("object table:");
+        for info in msg.get_scheduler_info().get_objtable() {
+            println!("entry: {:?}: {:?}", info.get_objref(), info.get_workerid());
         }
     }
 }
