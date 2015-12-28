@@ -1,37 +1,61 @@
 # Hermes
 
-## Running the Prototype
+## Setup
+The instructions below suffice to run the example code on Ubuntu instance on EC2.
 
-From the Hermes root directory, run
+Install dependencies
 
-```bash
-RUST_BACKTRACE=1 RUST_LOG=hermes=info cargo run --bin hermes
-```
+- `sudo apt-get update`
+- `sudo apt-get install -y emacs git gcc libzmq3-dev python2.7-dev python-pip`
+- `sudo pip install numpy`
+- `sudo pip install protobuf`
 
-Note that you need Rust nightly to run it. From the `examples` directory, run
+Install rust (we currently need the nightly build)
 
-```bash
-python matrix_multiply.py 1235
-```
+- `curl -sSf https://static.rust-lang.org/rustup.sh | sh -s -- --channel=nightly`
 
-and
+Build protobuf compiler
 
-```bash
-python matrix_multiply 1236
-```
+- `sudo apt-get install protobuf-compiler`
+- `cd ~`
+- `git clone https://github.com/stepancheg/rust-protobuf.git`
+- `cd rust-protobuf`
+- `cargo build`
+- add the line `export PATH=$HOME/rust-protobuf/target/debug:$PATH` to `~/.bashrc`
+- `source ~/.bashrc`
 
-Now, from the `lib/python` directory you can run
+Clone Hermes and create schema
 
-```bash
-python hermes.py
-```
+- `cd ~`
+- `git clone https://github.com/pcmoritz/hermes.git`
+- `cd hermes/schema`
+- `bash make-schema.sh`
+- `cd $HOME/hermes`
+- add `export LD_LIBRARY_PATH=$HOME/hermes/target/debug/:$LD_LIBRARY_PATH` to `~/.bashrc`
 
-You will be thrown into an IPython console from which additional queries can be run.
+Add Hermes to your python path
 
-## Running the Rust client library
+- add `export PYTHONPATH=$HOME/hermes/lib/python:$PYTHON_PATH` to `~/.bashrc `
+- `source ~/.bashrc`
 
-Put the following into your ~/.bashrc
+## Running the example code
 
-```bash
-export LD_LIBRARY_PATH=/home/pcmoritz/hermes/target/debug/:$LD_LIBRARY_PATH
-```
+In one terminal, do
+
+-`cd ~/hermes`
+- `RUST_BACKTRACE=1 RUST_LOG=hermes=info cargo run --bin hermes`
+
+In another terminal, do
+
+- `cd ~/hermes/examples`
+- `python matrix_multiply.py 1235`
+
+In another terminal, do
+
+- `cd ~/hermes/examples`
+- `python matrix_multiply.py 1236`
+
+Finally, in another terminal, do
+
+- `cd ~/hermes/lib/python`
+- `python hermes.py`
