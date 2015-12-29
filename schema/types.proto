@@ -7,3 +7,25 @@ message Int {
 message Float {
   optional float val = 1;
 }
+
+// A tensor library for Hermes
+
+enum DataType {
+  DTYPE_INT = 1;
+  DTYPE_LONG = 2;
+  DTYPE_FLOAT = 3;
+  DTYPE_DOUBLE = 4;
+}
+
+message Array {
+  repeated uint64 shape = 1;
+  optional DataType dtype = 2;
+  optional bytes data = 3;
+}
+
+message DistArray {
+  repeated uint64 shape = 1;
+  repeated uint64 block_shape = 2;
+  optional DataType dtype = 3;
+  optional Array objrefs = 4; // tensor of objrefs, each representing a block subtensor living on a node
+}

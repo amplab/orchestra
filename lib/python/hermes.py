@@ -7,18 +7,17 @@ import types
 curr_dir = os.path.dirname(__file__)
 execfile(os.path.join(curr_dir, "comm_pb2.py"))
 execfile(os.path.join(curr_dir, "types_pb2.py"))
-execfile(os.path.join(curr_dir, "tensor_pb2.py"))
 
 DTYPE_TO_NUMPY = {"DTYPE_INT": "int32", "DTYPE_LONG": "int64", "DTYPE_FLOAT": "float32", "DTYPE_DOUBLE": "float64"}
 NUMPY_TO_DTYPE = {v: k for k, v in DTYPE_TO_NUMPY.items()}
 
 # TODO(easy): Make this more efficient
-def make_tensor(array):
-    tensor = Tensor()
-    tensor.dims.extend(array.shape)
-    tensor.data += str(array[:].data)
-    tensor.dtype = DataType.Value(NUMPY_TO_DTYPE[str(array.dtype)])
-    return tensor
+def make_array(array):
+    array = Array()
+    array.shape.extend(array.shape)
+    array.data += str(array[:].data)
+    array.dtype = DataType.Value(NUMPY_TO_DTYPE[str(array.dtype)])
+    return array
 
 # TODO(easy): Might make this generic, for any type
 def make_float(val):
@@ -27,16 +26,16 @@ def make_float(val):
     return result
 
 # TODO(easy): Make this more efficient
-def numpy_view(tensor):
-    dtype_name = DataType.Name(tensor.dtype)
-    mat = np.frombuffer(tensor.data, dtype=DTYPE_TO_NUMPY[dtype_name])
-    mat.shape = tensor.dims
+def numpy_view(array):
+    dtype_name = DataType.Name(array.dtype)
+    mat = np.frombuffer(array.data, dtype=DTYPE_TO_NUMPY[dtype_name])
+    mat.shape = array.shape
     return mat
 
 def python_object(value):
     if type(value) == Int:
         return value.val
-    elif type(value) == Tensor:
+    elif type(value) == Array:
         return numpy_view(value)
     else:
         print "type not known", type(value)
@@ -53,7 +52,7 @@ def proto_buf(value):
         result.val = value
         return result
     elif type(value) == np.ndarray:
-        return make_tensor(value)
+        return make_array(value)
 
 class HermesContext:
     def __init__(self):
@@ -130,9 +129,9 @@ class HermesContext:
             self.lib.hermes_store_result(self.context, objref, result, len(result))
 
     def assemble(self, objref):
-        """Assemble a tensor on this node from a distributed tensor object reference."""
-        dist_array = self.pull(Tensor, objref)
-        return np.vstack([np.hstack([self.pull(Tensor, objref) for objref in row]) for row in dist_array])
+        """Assemble an array on this node from a distributed array object reference."""
+        dist_array = self.pull(Array, objref)
+        return np.vstack([np.hstack([self.pull(Array, objref) for objref in row]) for row in dist_array])
 
 context = HermesContext()
 
