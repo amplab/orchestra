@@ -2,6 +2,7 @@ import argparse
 import os
 from ctypes import *
 import numpy as np
+import types
 
 curr_dir = os.path.dirname(__file__)
 execfile(os.path.join(curr_dir, "comm_pb2.py"))
@@ -54,17 +55,8 @@ def proto_buf(value):
     elif type(value) == np.ndarray:
         return make_tensor(value)
 
-
-def distributed():
-    def distributed_decorator(func):
-        def func_wrapper(*protoargs):
-            args = map(python_object, protoargs)
-            return proto_buf(func(*args))
-        return func_wrapper
-    return distributed_decorator
-
 class HermesContext:
-    def __init__(self, server_addr, client_addr):
+    def __init__(self):
         self.lib = CDLL("libhermeslib.so")
         self.lib.hermes_get_arg_len.restype = c_size_t
         self.lib.hermes_get_arg_ptr.restype = c_void_p
@@ -73,12 +65,11 @@ class HermesContext:
         self.lib.hermes_num_args.restype = c_size_t
         self.lib.hermes_step.restype = c_size_t
         self.lib.hermes_pull.restype = c_size_t
-        self.context = self.lib.hermes_create_context(server_addr, client_addr)
         self.functions = []
         self.arg_types = []
-        # self.lib.hermes_register_type(self.context, "Tensor")
-        # self.lib.hermes_register_type(self.context, "Int")
-        # self.lib.hermes_register_type(self.context, "Float")
+
+    def connect(self, server_addr, client_addr):
+        self.context = self.lib.hermes_create_context(server_addr, client_addr)
 
     """Register a function that can be called remotely."""
     def register(self, name, function, *args):
@@ -143,6 +134,35 @@ class HermesContext:
         dist_array = self.pull(Tensor, objref)
         return np.vstack([np.hstack([self.pull(Tensor, objref) for objref in row]) for row in dist_array])
 
+context = HermesContext()
+
+def distributed(*types):
+    def distributed_decorator(func):
+        def func_executor(*protoargs):
+            args = map(python_object, protoargs)
+            return proto_buf(func(*args))
+        def func_call(*args):
+            num_args = len(args)
+            arguments_type = num_args * c_uint64
+            arguments = arguments_type()
+            for (i, arg) in enumerate(args):
+                arguments[i] = arg
+            return context.lib.hermes_call(context.context, func.func_name, arguments, num_args)
+        func_call.is_distributed = True
+        func_call.executor = func_executor
+        func_call.types = types
+        return func_call
+    return distributed_decorator
+
+def register_distributed(items):
+    for name, val in items:
+        if isinstance(val, types.FunctionType):
+            try:
+                if val.is_distributed:
+                    context.register(name, val.executor, *val.types)
+            except AttributeError:
+                pass
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('port', type=str, help='the port to listen at')
@@ -151,7 +171,7 @@ if __name__ == "__main__":
 
     print "args.console is ", args.console
 
-    context = HermesContext("tcp://127.0.0.1:1234", "tcp://127.0.0.1:" + args.port)
+    context.connect("tcp://127.0.0.1:1234", "tcp://127.0.0.1:" + args.port)
 
     if args.console == 1:
         import IPython
