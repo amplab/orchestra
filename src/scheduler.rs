@@ -89,6 +89,10 @@ impl Scheduler {
   fn find_next_job(self: &Scheduler, workerid: WorkerID, job_queue: &VecDeque<comm::Call>) -> Option<usize> {
     let objtable = &self.objtable.lock().unwrap();
     for (i, job) in job_queue.iter().enumerate() {
+      if !self.fntable.read().unwrap().contains_key(job.get_name()) {
+          panic!("next job bailing");
+          return None;
+      }
       if self.fntable.read().unwrap()[job.get_name()].binary_search(&workerid).is_ok() && self.can_run(job, objtable) {
         return Some(i);
       }
@@ -109,6 +113,10 @@ impl Scheduler {
   fn find_next_worker(self: &Scheduler, job: &comm::Call, worker_queue: &VecDeque<usize>) -> Option<usize> {
     let objtable = &self.objtable.lock().unwrap();
     for (i, workerid) in worker_queue.iter().enumerate() {
+      if !self.fntable.read().unwrap().contains_key(job.get_name()) {
+          panic!("next worker bailing");
+          return None;
+      }
       if self.fntable.read().unwrap()[job.get_name()].binary_search(workerid).is_ok() && self.can_run(job, objtable) {
         return Some(i);
       }

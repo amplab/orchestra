@@ -12,6 +12,7 @@ log = "0.3"
 env_logger = "0.3"
 libc = "0.1.10"
 rand = "*"
+argparse = "*"
 
 [dependencies.protobuf]
 git = "https://github.com/stepancheg/rust-protobuf.git"

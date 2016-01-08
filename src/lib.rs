@@ -8,6 +8,7 @@ extern crate log;
 extern crate env_logger;
 extern crate protobuf;
 extern crate libc;
+extern crate rand;
 
 extern crate zmq;
 
@@ -29,13 +30,16 @@ fn string_from_c(string: *const c_char) -> String {
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_create_context(server_addr: *const c_char, client_addr: *const c_char) -> *mut Context {
+pub extern "C" fn hermes_create_context(server_addr: *const c_char, client_addr: *const c_char, subscriber_port: u64) -> *mut Context {
     let server_addr = string_from_c(server_addr);
     let client_addr = string_from_c(client_addr);
 
-    env_logger::init().unwrap();
+    match env_logger::init() {
+        Ok(()) => {},
+        SetLoggerError => {} // logging framework already initialized
+    }
 
-    let res = unsafe { transmute(box Context::new(server_addr, client_addr)) };
+    let res = unsafe { transmute(box Context::new(server_addr, client_addr, subscriber_port)) };
     return res;
 }
 
@@ -84,17 +88,17 @@ pub extern "C" fn hermes_call(context: *mut Context, name: *const c_char, argume
     unsafe { (*context).remote_call_function(name, args) }
 }
 
+/// retlist needs to be preallocated on caller side
 #[no_mangle]
-pub extern "C" fn hermes_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t) -> size_t {
+pub extern "C" fn hermes_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t, retlist: *mut size_t) {
     let name = string_from_c(name);
     let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
     unsafe {
         let result = (*context).remote_call_map(name, args);
-        for elem in result {
-            println!("{:?}", elem);
+        for (i, elem) in result.iter().enumerate() {
+            *retlist.offset(i as isize) = *elem;
         }
     };
-    return 0;
 }
 
 #[no_mangle]

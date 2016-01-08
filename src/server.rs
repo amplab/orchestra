@@ -2,7 +2,7 @@ use comm;
 use graph;
 use scheduler;
 use scheduler::{Scheduler, Event};
-use utils::{send_message, receive_message, receive_ack, send_ack};
+use utils::{send_message, receive_message, receive_ack, send_ack, bind_socket};
 use utils::{WorkerID, ObjRef, ObjTable, FnTable};
 use graph::CompGraph;
 use rand;
@@ -31,29 +31,29 @@ pub struct Worker {
 /// data is transferred using these client side connections. It is the `WorkerPool`s task to
 /// establish the connections.
 pub struct WorkerPool {
-  // Workers that have been registered with this pool.
+  /// Workers that have been registered with this pool.
   workers: Arc<RwLock<Vec<Worker>>>,
-  // Notify the scheduler that a worker, job or object becomes available.
+  /// Notify the scheduler that a worker, job or object becomes available.
   scheduler_notify: Sender<Event>,
-  // Send delivery requests to clients.
-  publish_notify: Sender<(WorkerID, comm::Message)>
+  /// Send delivery requests to clients.
+  publish_notify: Sender<(WorkerID, comm::Message)>,
 }
 
 impl WorkerPool {
   /// Create a new `WorkerPool`.
-  pub fn new(objtable: Arc<Mutex<ObjTable>>, fntable: Arc<RwLock<FnTable>>) -> WorkerPool {
+  pub fn new(objtable: Arc<Mutex<ObjTable>>, fntable: Arc<RwLock<FnTable>>, publish_port: u64) -> WorkerPool {
     let (publish_sender, publish_receiver) = mpsc::channel();
     let scheduler_notify = Scheduler::start(objtable, fntable);
-    WorkerPool::start_publisher_thread(publish_receiver);
+    WorkerPool::start_publisher_thread(publish_receiver, publish_port);
     return WorkerPool { workers: Arc::new(RwLock::new(Vec::new())), publish_notify: publish_sender, scheduler_notify: scheduler_notify }
   }
 
   /// Start the thread that is used to feed the PUB/SUB network between the server and the workers.
-  pub fn start_publisher_thread(publish_notify: Receiver<(WorkerID, comm::Message)>) {
+  pub fn start_publisher_thread(publish_notify: Receiver<(WorkerID, comm::Message)>, publish_port: u64) {
     thread::spawn(move || {
       let mut zmq_ctx = zmq::Context::new();
       let mut publisher = zmq_ctx.socket(zmq::PUB).unwrap();
-      publisher.bind("tcp://*:5240").unwrap();
+      bind_socket(&mut publisher, "*", Some(publish_port));
       loop {
         match publish_notify.recv().unwrap() {
           (workerid, msg) => {
@@ -78,19 +78,17 @@ impl WorkerPool {
   }
 
   /// Connect a new worker to the workers already present in the pool.
-  fn connect(self: &mut WorkerPool, zmq_ctx: &mut zmq::Context, addr: &str, workerid: WorkerID) -> Socket {
+  fn connect(self: &mut WorkerPool, zmq_ctx: &mut zmq::Context, addr: &str, workerid: WorkerID, setup_socket: &mut Socket) -> Socket {
     info!("connecting worker {}", workerid);
     let mut socket = zmq_ctx.socket(zmq::REQ).unwrap();
     socket.connect(addr).unwrap();
-    let mut setup = zmq_ctx.socket(zmq::REP).ok().unwrap();
-    setup.bind("tcp://*:5241").ok().unwrap();
     let mut buf = zmq::Message::new().unwrap();
     loop {
       let mut hello = comm::Message::new();
       hello.set_field_type(comm::MessageType::HELLO);
       self.publish_notify.send((workerid, hello)).unwrap();
       thread::sleep_ms(10); // don't float the message queue
-      match setup.recv(&mut buf, zmq::DONTWAIT) {
+      match setup_socket.recv(&mut buf, zmq::DONTWAIT) {
         Ok(_) => break,
         Err(_) => continue
       }
@@ -135,13 +133,13 @@ impl WorkerPool {
   }
 
   /// Register a new worker with the worker pool.
-  pub fn register(self: &mut WorkerPool, zmq_ctx: &mut zmq::Context, addr: &str, objtable: Arc<Mutex<ObjTable>>) -> WorkerID {
+  pub fn register(self: &mut WorkerPool, zmq_ctx: &mut zmq::Context, addr: &str, objtable: Arc<Mutex<ObjTable>>, setup_socket: &mut Socket) -> WorkerID {
     info!("registering new worker");
     let (incoming, receiver) = mpsc::channel();
     let workerid = self.len();
     let sender = self.scheduler_notify.clone();
     let publish_notify = self.publish_notify.clone();
-    let mut socket = self.connect(zmq_ctx, addr, workerid);
+    let mut socket = self.connect(zmq_ctx, addr, workerid, setup_socket);
     let workers = self.workers.clone();
     let objtable = objtable.clone();
     thread::spawn(move || {
@@ -198,14 +196,14 @@ pub struct Server<'a> {
 
 impl<'a> Server<'a> {
   /// Create a new server.
-  pub fn new() -> Server<'a> {
+  pub fn new(publish_port: u64) -> Server<'a> {
     let mut ctx = zmq::Context::new();
 
     let objtable = Arc::new(Mutex::new(Vec::new()));
     let fntable = Arc::new(RwLock::new(HashMap::new()));
 
     Server {
-      workerpool: WorkerPool::new(objtable.clone(), fntable.clone()),
+      workerpool: WorkerPool::new(objtable.clone(), fntable.clone(), publish_port),
       objtable: objtable,
       fntable: fntable,
       graph: CompGraph::new(),
@@ -214,9 +212,9 @@ impl<'a> Server<'a> {
   }
 
   /// Start the server's main loop.
-  pub fn main_loop<'b>(self: &'b mut Server<'a>) {
+  pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u64) {
     let mut socket = self.zmq_ctx.socket(zmq::REP).ok().unwrap();
-    socket.bind("tcp://127.0.0.1:1234").ok().unwrap(); // TODO: Put into config file and give error message
+    bind_socket(&mut socket, "127.0.0.1", Some(incoming_port));
     loop {
       self.process_request(&mut socket);
     }
@@ -299,6 +297,13 @@ impl<'a> Server<'a> {
     out.write(res.as_bytes()).unwrap();
   }
 
+  /// Establish the setup port that will be used for setting up the client server connection
+  fn bind_setup_socket(zmq_ctx: &mut zmq::Context) -> (Socket, u64) {
+    let mut setup_socket = zmq_ctx.socket(zmq::REP).ok().unwrap();
+    let port = bind_socket(&mut setup_socket, "*", None);
+    return (setup_socket, port)
+  }
+
   /// Process request by client.
   pub fn process_request<'b>(self: &'b mut Server<'a>, socket: &'b mut Socket) {
     let msg = receive_message(socket);
@@ -310,11 +315,14 @@ impl<'a> Server<'a> {
       },
       comm::MessageType::REGISTER_CLIENT => {
         let workerid = self.workerpool.len();
+        let (mut setup_socket, setup_port) = Server::bind_setup_socket(&mut self.zmq_ctx);
+        info!("chose port {}", setup_port);
         let mut ack = comm::Message::new();
         ack.set_field_type(comm::MessageType::ACK);
         ack.set_workerid(workerid as u64);
+        ack.set_setup_port(setup_port);
         send_message(socket, &mut ack);
-        self.workerpool.register(&mut self.zmq_ctx, msg.get_address(), self.objtable.clone());
+        self.workerpool.register(&mut self.zmq_ctx, msg.get_address(), self.objtable.clone(), &mut setup_socket);
       },
       comm::MessageType::REGISTER_FUNCTION => {
         let workerid = msg.get_workerid() as WorkerID;

@@ -6,6 +6,8 @@ use zmq;
 use zmq::{Socket};
 use std::io::Cursor;
 use std::collections::HashMap;
+use rand;
+use rand::distributions::{IndependentSample, Range};
 
 /// A unique identifier for an object stored on one of the workers.
 pub type ObjRef = u64;
@@ -86,4 +88,35 @@ pub fn send_ack(socket: &mut Socket) {
 pub fn receive_ack(socket: &mut Socket) {
   let ack = receive_message(socket);
   assert!(ack.get_field_type() == comm::MessageType::ACK);
+}
+
+/// Bind a ZeroMQ socket to specific address. If port is None, connect to a free port. Return port.
+pub fn bind_socket(socket: &mut Socket, host: &str, port: Option<u64>) -> u64 {
+  match port {
+    None => {
+      loop {
+        let mut rng = rand::thread_rng();
+        let range = Range::new(2048, 65535);
+        let port = range.ind_sample(&mut rng);
+        match socket.bind(&format!("tcp://{}:{}", host, port)[..]) {
+          Ok(()) => { return port },
+          Err(err) => { continue }
+        }
+      }
+    }
+    Some(port) => {
+      match socket.bind(&format!("tcp://{}:{}", host, port)[..]) {
+        Ok(()) => { return port },
+        Err(err) => { panic!("Could not bind socket. Make sure port {} is not used yet. {}", port, err) }
+      }
+    }
+  }
+}
+
+/// Connect a ZeroMQ socket to specific address
+pub fn connect_socket(socket: &mut Socket, host: &str, port: u64) {
+    match socket.connect(&format!("tcp://{}:{}", host, port)[..]) {
+        Ok(()) => {},
+        Err(_) => { panic!("Could not connect socket. Make sure port is set correctly.") }
+    }
 }

@@ -3,7 +3,7 @@ use zmq;
 use zmq::{Socket};
 
 use comm;
-use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack};
+use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket};
 use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -76,7 +76,7 @@ impl Context {
             }
         });
     }
-    pub fn new(server_addr: String, client_addr: String) -> Context {
+    pub fn new(server_addr: String, client_addr: String, publish_port: u64) -> Context {
         let mut zmq_ctx = zmq::Context::new();
 
         let mut request = zmq_ctx.socket(zmq::REQ).unwrap();
@@ -97,8 +97,10 @@ impl Context {
 
         send_message(&mut request, &mut reg);
         let ack = receive_message(&mut request);
-        info!("my workerid is {}", ack.get_workerid());
         let workerid = ack.get_workerid() as WorkerID;
+        info!("my workerid is {}", workerid);
+        let setup_port = ack.get_setup_port();
+        info!("setup port is {}", setup_port);
 
         // the network thread listens to commands on the master subscription channel and serves the other client channels with data. It notifies the main thread if new data becomes available.
 
@@ -112,7 +114,7 @@ impl Context {
 
         thread::spawn(move || {
             let mut zmq_ctx = zmq::Context::new();
-            let mut subscriber = Context::connect_network_thread(&mut zmq_ctx, workerid);
+            let mut subscriber = Context::connect_network_thread(&mut zmq_ctx, workerid, setup_port, publish_port);
 
             loop {
                 let msg = receive_subscription(&mut subscriber);
@@ -160,13 +162,15 @@ impl Context {
         }
     }
 
-    fn connect_network_thread(zmq_ctx: &mut zmq::Context, workerid: WorkerID) -> Socket {
+    fn connect_network_thread(zmq_ctx: &mut zmq::Context, workerid: WorkerID, setup_port: u64, subscriber_port: u64) -> Socket {
         let mut subscriber = zmq_ctx.socket(zmq::SUB).unwrap();
-        subscriber.connect("tcp://localhost:5240").unwrap();
+        info!("subscriber_port {}", subscriber_port);
+        connect_socket(&mut subscriber, "localhost", subscriber_port);
         subscriber.set_subscribe(format!("{:0>#07}", workerid).as_bytes()).unwrap();
 
         let mut setup = zmq_ctx.socket(zmq::REQ).unwrap();
-        setup.connect("tcp://localhost:5241").unwrap();
+        connect_socket(&mut setup, "localhost", setup_port);
+        info!("setup_port {}", setup_port);
         thread::sleep_ms(10);
         // set up sub/pub socket
         let mut msg = zmq::Message::new().unwrap();
