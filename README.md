@@ -43,24 +43,9 @@ Add Orchestra to your python path
 - add `export PYTHONPATH=$HOME/orchestra/lib/python:$PYTHON_PATH` to `~/.bashrc `
 - `source ~/.bashrc`
 
-## Running the example code
+## Running the tests
 
-In one terminal, do
+In a terminal, run
 
--`cd ~/orchestra`
-- `RUST_BACKTRACE=1 RUST_LOG=orchestra=info cargo run --bin orchestra`
-
-In another terminal, do
-
-- `cd ~/orchestra/examples`
-- `python matrix_multiply.py 1235`
-
-In another terminal, do
-
-- `cd ~/orchestra/examples`
-- `python matrix_multiply.py 1236`
-
-Finally, in another terminal, do
-
-- `cd ~/orchestra/lib/python`
-- `python orchestra.py`
+- `cd ~/orchestra/test`
+- `RUST_LOG=hermes=info python runtest.py`
