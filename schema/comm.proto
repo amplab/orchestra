@@ -11,7 +11,6 @@
 message Arg {
   optional uint64 objref = 1; // can either be call-by-reference for large objects
   repeated bytes data = 2; // or call-by-value for small objects
-  optional uint64 typeinfo = 3; // if the argument is passed by value, this field holds type information
 }
 
 message Call {
@@ -36,6 +35,11 @@ message PullInfo {
   optional uint64 objref = 2;
 }
 
+message FnInfo {
+  optional string fnname = 1;
+  repeated uint64 workerid = 2;
+}
+
 message ObjInfo {
   optional uint64 objref = 1;
   repeated uint64 workerid = 2;
@@ -46,6 +50,7 @@ message SchedulerInfo {
   repeated Call job_queue = 2;
   repeated PullInfo pull_queue = 3;
   repeated ObjInfo objtable = 4;
+  repeated FnInfo fntable = 5;
 }
 
 enum MessageType {
@@ -71,4 +76,5 @@ message Message {
   optional uint64 workerid = 6; // uniquely identify worker
   optional string fnname = 7;
   optional SchedulerInfo scheduler_info = 8;
+  optional uint64 setup_port = 9; // the setup port for the client
 }

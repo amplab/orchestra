@@ -309,8 +309,8 @@ impl<'a> Server<'a> {
     let msg = receive_message(socket);
     match msg.get_field_type() {
       comm::MessageType::INVOKE => {
-        info!("received {:?} {:?}", msg.get_call().get_field_type(), msg.get_call().get_name());
         let mut message = self.add_request(msg.get_call());
+        info!("add request {:?} {:?}, result {:?}", msg.get_call().get_field_type(), msg.get_call().get_name(), message.get_call().get_result());
         send_message(socket, &mut message);
       },
       comm::MessageType::REGISTER_CLIENT => {
@@ -349,7 +349,8 @@ impl<'a> Server<'a> {
         send_ack(socket);
         let result = msg.get_call().get_result();
         assert!(result.len() == 1);
-        self.register_result(result[0], msg.get_workerid() as WorkerID);
+        let workerid = msg.get_workerid() as WorkerID;
+        self.register_result(result[0], workerid); // this must happen before we notify the scheduler
         self.workerpool.scheduler_notify.send(scheduler::Event::Worker(msg.get_workerid() as usize)).unwrap();
         self.workerpool.scheduler_notify.send(scheduler::Event::Obj(result[0])).unwrap();
       },

@@ -62,7 +62,7 @@ class MapTest(HermesTest):
 class MatMulTest(HermesTest):
 
     def testMatMul(self):
-        time.sleep(2.0)
+        time.sleep(1.0)
 
         print "starting computation"
 

@@ -119,6 +119,10 @@ pub extern "C" fn hermes_debug_info(context: *mut Context) {
         for info in msg.get_scheduler_info().get_objtable() {
             println!("entry: {:?}: {:?}", info.get_objref(), info.get_workerid());
         }
+        println!("function table");
+        for info in msg.get_scheduler_info().get_fntable() {
+            println!("entry: {:?}: {:?}", info.get_fnname(), info.get_workerid());
+        }
     }
 }
 

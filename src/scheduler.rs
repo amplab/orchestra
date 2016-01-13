@@ -78,6 +78,17 @@ impl Scheduler {
       objs.push(info);
     }
     scheduler_info.set_objtable(RepeatedField::from_vec(objs));
+
+    let fntable = self.fntable.read().unwrap();
+    let mut fns = Vec::new();
+    for (fnname, workers) in fntable.iter() {
+      let mut info = comm::FnInfo::new();
+      info.set_fnname(fnname.to_string());
+      info.set_workerid((*workers).iter().map(|x| *x as u64).collect());
+      fns.push(info);
+    }
+    scheduler_info.set_fntable(RepeatedField::from_vec(fns));
+
     let mut msg = comm::Message::new();
     msg.set_field_type(comm::MessageType::DEBUG);
     msg.set_scheduler_info(scheduler_info);
@@ -162,6 +173,21 @@ impl Scheduler {
             for &(workerid, objref) in pull_queue.iter() {
               if objref == newobjref {
                 Scheduler::send_pull_request(&mut workers, workerid, objref);
+              }
+            }
+            // see if we can evaluate one of the pending jobs now
+            let mut workeridx = 0;
+            while workeridx < worker_queue.len() {
+              let workerid = *worker_queue.get(workeridx).unwrap();
+              match self.find_next_job(workerid, &job_queue) {
+                Some(jobidx) => {
+                  let job = job_queue.swap_remove_front(jobidx).unwrap();
+                  worker_queue.swap_remove_front(workeridx).unwrap();
+                  Scheduler::send_function_call(&mut workers, workerid, job);
+                }
+                None => {
+                    workeridx += 1;
+                }
               }
             }
           },

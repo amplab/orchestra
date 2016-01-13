@@ -329,7 +329,7 @@ impl Context {
                         State::Processing {call: _, ref mut deps} => {
                             match deps.binary_search(&objref) {
                                 Ok(idx) => {
-                                    deps.swap_remove(idx);
+                                    deps.remove(idx); // TODO: use more efficient data structure
                                 }
                                 _ => {}
                             }
