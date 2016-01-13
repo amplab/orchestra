@@ -25,7 +25,7 @@ fn main() {
     let mut publish_port = 0;
     {
         let mut ap = ArgumentParser::new();
-        ap.set_description("Hermes server");
+        ap.set_description("Orchestra server");
         ap.refer(&mut incoming_port).add_argument("incoming_port", Store, "port for incoming requests");
         ap.refer(&mut publish_port).add_argument("publish_port", Store, "port for message broadcasting");
         ap.parse_args_or_exit();

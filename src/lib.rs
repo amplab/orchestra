@@ -30,7 +30,7 @@ fn string_from_c(string: *const c_char) -> String {
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_create_context(server_addr: *const c_char, client_addr: *const c_char, subscriber_port: u64) -> *mut Context {
+pub extern "C" fn orchestra_create_context(server_addr: *const c_char, client_addr: *const c_char, subscriber_port: u64) -> *mut Context {
     let server_addr = string_from_c(server_addr);
     let client_addr = string_from_c(client_addr);
 
@@ -44,20 +44,20 @@ pub extern "C" fn hermes_create_context(server_addr: *const c_char, client_addr:
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_destroy_context(context: *mut Context) {
+pub extern "C" fn orchestra_destroy_context(context: *mut Context) {
     let _drop_me: Box<Context> = unsafe { transmute(context) };
 }
 
 /*
 
 #[no_mangle]
-pub extern "C" fn hermes_register_type(context: *mut Context, name: *const c_char) {
+pub extern "C" fn orchestra_register_type(context: *mut Context, name: *const c_char) {
     let name = string_from_c(name);
     unsafe { (*context).client().add_type(name) };
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_get_type(context: *mut Context, name: *const c_char) -> c_int {
+pub extern "C" fn orchestra_get_type(context: *mut Context, name: *const c_char) -> c_int {
     let name = string_from_c(name);
     unsafe {
         match (*context).client().get_type(name) {
@@ -70,19 +70,19 @@ pub extern "C" fn hermes_get_type(context: *mut Context, name: *const c_char) ->
 */
 
 #[no_mangle]
-pub extern "C" fn hermes_register_function(context: *mut Context, name: *const c_char) -> usize {
+pub extern "C" fn orchestra_register_function(context: *mut Context, name: *const c_char) -> usize {
     let name = string_from_c(name);
     unsafe { return (*context).add_function(name) };
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_store_result(context: *mut Context, objref: size_t, data: *const uint8_t, datalen: size_t) {
+pub extern "C" fn orchestra_store_result(context: *mut Context, objref: size_t, data: *const uint8_t, datalen: size_t) {
     let data = unsafe { slice::from_raw_parts(data, datalen as usize) };
     unsafe { (*context).add_object(objref, data.to_vec()) };
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_call(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t) -> size_t {
+pub extern "C" fn orchestra_call(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t) -> size_t {
     let name = string_from_c(name);
     let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
     unsafe { (*context).remote_call_function(name, args) }
@@ -90,7 +90,7 @@ pub extern "C" fn hermes_call(context: *mut Context, name: *const c_char, argume
 
 /// retlist needs to be preallocated on caller side
 #[no_mangle]
-pub extern "C" fn hermes_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t, retlist: *mut size_t) {
+pub extern "C" fn orchestra_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t, retlist: *mut size_t) {
     let name = string_from_c(name);
     let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
     unsafe {
@@ -102,12 +102,12 @@ pub extern "C" fn hermes_map(context: *mut Context, name: *const c_char, argumen
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_pull(context: *mut Context, objref: size_t) -> size_t {
+pub extern "C" fn orchestra_pull(context: *mut Context, objref: size_t) -> size_t {
     unsafe { return (*context).pull_remote_object(objref); }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_debug_info(context: *mut Context) {
+pub extern "C" fn orchestra_debug_info(context: *mut Context) {
     unsafe {
         let msg = (*context).pull_debug_info();
         println!("worker queue: {:?}", msg.get_scheduler_info().get_worker_queue());
@@ -127,7 +127,7 @@ pub extern "C" fn hermes_debug_info(context: *mut Context) {
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_step(context: *mut Context) -> size_t {
+pub extern "C" fn orchestra_step(context: *mut Context) -> size_t {
     unsafe {
         (*context).finish_request();
         return (*context).client_step();
@@ -135,31 +135,31 @@ pub extern "C" fn hermes_step(context: *mut Context) -> size_t {
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_function_index(context: *mut Context) -> usize {
+pub extern "C" fn orchestra_function_index(context: *mut Context) -> usize {
     unsafe { (*context).get_function() }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_num_args(context: *mut Context) -> usize {
+pub extern "C" fn orchestra_num_args(context: *mut Context) -> usize {
     unsafe { (*context).get_num_args() }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_get_arg_len(context: *mut Context, argidx: usize) -> usize {
+pub extern "C" fn orchestra_get_arg_len(context: *mut Context, argidx: usize) -> usize {
     unsafe { (*context).get_arg_len(argidx).expect("argument reference not found") }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_get_arg_ptr(context: *mut Context, argidx: usize) -> *const uint8_t {
+pub extern "C" fn orchestra_get_arg_ptr(context: *mut Context, argidx: usize) -> *const uint8_t {
     unsafe { (*context).get_arg_ptr(argidx).expect("argument reference not found") }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_get_obj_len(context: *mut Context, objref: u64) -> usize {
+pub extern "C" fn orchestra_get_obj_len(context: *mut Context, objref: u64) -> usize {
     unsafe { (*context).get_obj_len(objref).expect("object reference not found") }
 }
 
 #[no_mangle]
-pub extern "C" fn hermes_get_obj_ptr(context: *mut Context, objref: u64) -> *const uint8_t {
+pub extern "C" fn orchestra_get_obj_ptr(context: *mut Context, objref: u64) -> *const uint8_t {
     unsafe { (*context).get_obj_ptr(objref).expect("object reference not found") }
 }

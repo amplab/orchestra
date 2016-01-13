@@ -1,6 +1,6 @@
 import subprocess, os, signal, time, socket, psutil
 import unittest
-import hermes
+import orchestra
 from random import randint
 import numpy as np
 
@@ -13,7 +13,7 @@ def get_unused_port():
 
 numworkers = 5
 
-class HermesTest(unittest.TestCase):
+class OrchestraTest(unittest.TestCase):
 
     def setUp(self):
         incoming_port = str(get_unused_port())
@@ -21,30 +21,30 @@ class HermesTest(unittest.TestCase):
         publish_port = str(get_unused_port())
         print "publish port is", publish_port
 
-        self.master = subprocess.Popen(["cargo", "run", "--bin", "hermes", "--", incoming_port, publish_port], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
+        self.master = subprocess.Popen(["cargo", "run", "--bin", "orchestra", "--", incoming_port, publish_port], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
         self.workers = map(lambda worker: subprocess.Popen(["python", "mapreduce.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
         self.workers = map(lambda worker: subprocess.Popen(["python", "matmul.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
-        hermes.context.connect("tcp://127.0.0.1:" + incoming_port, "tcp://127.0.0.1:" + str(get_unused_port()), int(publish_port))
+        orchestra.context.connect("tcp://127.0.0.1:" + incoming_port, "tcp://127.0.0.1:" + str(get_unused_port()), int(publish_port))
 
     def tearDown(self):
         os.killpg(self.master.pid, signal.SIGTERM)
         for worker in self.workers:
             os.killpg(worker.pid, signal.SIGTERM)
 
-class CallTest(HermesTest):
+class CallTest(OrchestraTest):
 
     def testCall(self):
         time.sleep(0.5)
 
         import mapreduce
         M = mapreduce.zeros()
-        res = hermes.context.pull(np.ndarray, M)
+        res = orchestra.context.pull(np.ndarray, M)
         self.assertTrue(np.linalg.norm(res) < 1e-5)
 
         M = mapreduce.create_dist_array()
-        res = hermes.context.pull(np.ndarray, M)
+        res = orchestra.context.pull(np.ndarray, M)
 
-class MapTest(HermesTest):
+class MapTest(OrchestraTest):
 
     def testMap(self):
         time.sleep(0.5)
@@ -55,11 +55,11 @@ class MapTest(HermesTest):
         args = []
         for i in range(m):
             args.append(mapreduce.zeros())
-        res = hermes.context.map(plusone, args)
+        res = orchestra.context.map(plusone, args)
         for i in range(m):
-            mat = hermes.context.pull(np.ndarray, res[i])
+            mat = orchestra.context.pull(np.ndarray, res[i])
 
-class MatMulTest(HermesTest):
+class MatMulTest(OrchestraTest):
 
     def testMatMul(self):
         time.sleep(1.0)
@@ -72,8 +72,8 @@ class MatMulTest(HermesTest):
         M = mapreduce.create_dist_array()
         res = matmul.matrix_multiply(M, M)
 
-        A = hermes.context.assemble(M)
-        B = hermes.context.assemble(res)
+        A = orchestra.context.assemble(M)
+        B = orchestra.context.assemble(res)
 
         # import IPython
         # IPython.embed()

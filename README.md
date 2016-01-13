@@ -1,4 +1,9 @@
-# Hermes
+# Orchestra
+
+Orchestra is work in progress; all the functionality that is implemented is
+expected to work, if you run into problems you should file an issue on github.
+While performance is an explicit goal of this project, so far most focus has
+been on correctness rather than performance.
 
 ## Setup
 The instructions below suffice to run the example code on Ubuntu instance on EC2.
@@ -24,38 +29,38 @@ Build protobuf compiler
 - add the line `export PATH=$HOME/rust-protobuf/target/debug:$PATH` to `~/.bashrc`
 - `source ~/.bashrc`
 
-Clone Hermes and create schema
+Clone Orchestra and create schema
 
 - `cd ~`
-- `git clone https://github.com/pcmoritz/hermes.git`
-- `cd hermes/schema`
+- `git clone https://github.com/amplab/orchestra.git`
+- `cd orchestra/schema`
 - `bash make-schema.sh`
-- `cd $HOME/hermes`
-- add `export LD_LIBRARY_PATH=$HOME/hermes/target/debug/:$LD_LIBRARY_PATH` to `~/.bashrc`
+- `cd $HOME/orchestra`
+- add `export LD_LIBRARY_PATH=$HOME/orchestra/target/debug/:$LD_LIBRARY_PATH` to `~/.bashrc`
 
-Add Hermes to your python path
+Add Orchestra to your python path
 
-- add `export PYTHONPATH=$HOME/hermes/lib/python:$PYTHON_PATH` to `~/.bashrc `
+- add `export PYTHONPATH=$HOME/orchestra/lib/python:$PYTHON_PATH` to `~/.bashrc `
 - `source ~/.bashrc`
 
 ## Running the example code
 
 In one terminal, do
 
--`cd ~/hermes`
-- `RUST_BACKTRACE=1 RUST_LOG=hermes=info cargo run --bin hermes`
+-`cd ~/orchestra`
+- `RUST_BACKTRACE=1 RUST_LOG=orchestra=info cargo run --bin orchestra`
 
 In another terminal, do
 
-- `cd ~/hermes/examples`
+- `cd ~/orchestra/examples`
 - `python matrix_multiply.py 1235`
 
 In another terminal, do
 
-- `cd ~/hermes/examples`
+- `cd ~/orchestra/examples`
 - `python matrix_multiply.py 1236`
 
 Finally, in another terminal, do
 
-- `cd ~/hermes/lib/python`
-- `python hermes.py`
+- `cd ~/orchestra/lib/python`
+- `python orchestra.py`

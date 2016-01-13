@@ -57,29 +57,29 @@ def serialize(value):
     else:
         return value.serialize()
 
-class HermesContext:
+class OrchestraContext:
     def __init__(self):
-        self.lib = CDLL("libhermeslib.so")
-        self.lib.hermes_get_arg_len.restype = c_size_t
-        self.lib.hermes_get_arg_ptr.restype = c_void_p
-        self.lib.hermes_get_obj_len.restype = c_size_t
-        self.lib.hermes_get_obj_ptr.restype = c_void_p
-        self.lib.hermes_num_args.restype = c_size_t
-        self.lib.hermes_step.restype = c_size_t
-        self.lib.hermes_pull.restype = c_size_t
+        self.lib = CDLL("liborchestralib.so")
+        self.lib.orchestra_get_arg_len.restype = c_size_t
+        self.lib.orchestra_get_arg_ptr.restype = c_void_p
+        self.lib.orchestra_get_obj_len.restype = c_size_t
+        self.lib.orchestra_get_obj_ptr.restype = c_void_p
+        self.lib.orchestra_num_args.restype = c_size_t
+        self.lib.orchestra_step.restype = c_size_t
+        self.lib.orchestra_pull.restype = c_size_t
         self.functions = []
         self.arg_types = []
 
     def connect(self, server_addr, client_addr, subscriber_port):
         print "connect to", server_addr, client_addr
-        self.context = self.lib.hermes_create_context(server_addr, client_addr, subscriber_port)
+        self.context = self.lib.orchestra_create_context(server_addr, client_addr, subscriber_port)
 
     def close(self):
-        self.lib.hermes_destroy_context(self.context)
+        self.lib.orchestra_destroy_context(self.context)
 
     """Register a function that can be called remotely."""
     def register(self, name, function, *args):
-        fnid = self.lib.hermes_register_function(self.context, name)
+        fnid = self.lib.orchestra_register_function(self.context, name)
         assert(fnid == len(self.functions))
         self.functions.append(function)
         self.arg_types.append(args)
@@ -92,7 +92,7 @@ class HermesContext:
         arguments = arguments_type()
         for (i, arg) in enumerate(args):
             arguments[i] = arg
-        return self.lib.hermes_call(self.context, name, arguments, num_args)
+        return self.lib.orchestra_call(self.context, name, arguments, num_args)
 
     def map(self, func, list):
         num_args = len(list)
@@ -101,41 +101,41 @@ class HermesContext:
         results = arguments_type()
         for (i, arg) in enumerate(list):
             arguments[i] = arg
-        self.lib.hermes_map(self.context, func.name, arguments, num_args, results)
+        self.lib.orchestra_map(self.context, func.name, arguments, num_args, results)
         return results
 
     # TODO(pcmoritz): Store type information on the server and the client to get rid of the type parameter
     def pull(self, typ, objref):
-        objref = self.lib.hermes_pull(self.context, objref)
-        p = self.lib.hermes_get_obj_ptr(self.context, objref)
-        l = self.lib.hermes_get_obj_len(self.context, objref)
+        objref = self.lib.orchestra_pull(self.context, objref)
+        p = self.lib.orchestra_get_obj_ptr(self.context, objref)
+        l = self.lib.orchestra_get_obj_len(self.context, objref)
         data = string_at(p, l)
         return deserialize(typ, data)
 
     def debug_info(self):
-        self.lib.hermes_debug_info(self.context)
+        self.lib.orchestra_debug_info(self.context)
 
     def main_loop(self):
         while True:
-            objref = self.lib.hermes_step(self.context)
-            fnidx = self.lib.hermes_function_index(self.context)
+            objref = self.lib.orchestra_step(self.context)
+            fnidx = self.lib.orchestra_function_index(self.context)
             args = []
-            for i in range(self.lib.hermes_num_args(self.context)):
-                p = self.lib.hermes_get_arg_ptr(self.context, i)
-                l = self.lib.hermes_get_arg_len(self.context, i)
+            for i in range(self.lib.orchestra_num_args(self.context)):
+                p = self.lib.orchestra_get_arg_ptr(self.context, i)
+                l = self.lib.orchestra_get_arg_len(self.context, i)
                 data = string_at(p, l)
                 print i
                 args.append(data)
             func = self.functions[fnidx]
             result = func(*args)
-            self.lib.hermes_store_result(self.context, objref, result, len(result))
+            self.lib.orchestra_store_result(self.context, objref, result, len(result))
 
     def assemble(self, objref):
         """Assemble an array on this node from a distributed array object reference."""
         dist_array = self.pull(np.ndarray, objref)
         return np.vstack([np.hstack([self.pull(np.ndarray, objref) for objref in row]) for row in dist_array])
 
-context = HermesContext()
+context = OrchestraContext()
 
 def distributed(*types):
     def distributed_decorator(func):
@@ -150,7 +150,7 @@ def distributed(*types):
             arguments = arguments_type()
             for (i, arg) in enumerate(args):
                 arguments[i] = arg
-            return context.lib.hermes_call(context.context, func.func_name, arguments, num_args)
+            return context.lib.orchestra_call(context.context, func.func_name, arguments, num_args)
         func_call.name = func.func_name
         func_call.is_distributed = True
         func_call.executor = func_executor

@@ -1,10 +1,10 @@
 [package]
-name = "hermes"
+name = "orchestra"
 version = "0.2.0"
-authors = ["Philipp Moritz <pcmoritz@gmail.com>"]
+authors = ["Philipp Moritz <pcm@berkeley.edu>", "Robert Nishihara <rkn@berkeley.edu>"]
 
 [lib]
-name = "hermeslib"
+name = "orchestralib"
 crate-type = ["dylib"]
 
 [dependencies]

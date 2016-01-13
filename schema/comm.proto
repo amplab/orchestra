@@ -1,4 +1,4 @@
-// This file is defining the communication module of Hermes
+// This file is defining the communication module of Orchestra
 
 // The master builds the computation graph and does the scheduling, but has no
 // contact with data. The messages it sends and receives are very small, which
