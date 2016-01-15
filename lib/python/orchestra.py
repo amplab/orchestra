@@ -84,24 +84,16 @@ class OrchestraContext:
         self.functions.append(function)
         self.arg_types.append(args)
 
-
-    """Call a function on a remote machine, args is a list of object references"""
-    def call(self, name, *args):
-        num_args = len(args)
-        arguments_type = num_args * c_uint64
-        arguments = arguments_type()
-        for (i, arg) in enumerate(args):
-            arguments[i] = arg
-        return self.lib.orchestra_call(self.context, name, arguments, num_args)
-
     def map(self, func, list):
+        args = Args()
+        for (i, a) in enumerate(list):
+            args.args.add().objref = a
+        data = args.SerializeToString()
         num_args = len(list)
         arguments_type = num_args * c_uint64
         arguments = arguments_type()
         results = arguments_type()
-        for (i, arg) in enumerate(list):
-            arguments[i] = arg
-        self.lib.orchestra_map(self.context, func.name, arguments, num_args, results)
+        self.lib.orchestra_map(self.context, func.name, data, len(data), results)
         return results
 
     # TODO(pcmoritz): Store type information on the server and the client to get rid of the type parameter
@@ -145,12 +137,11 @@ def distributed(*types):
                 args.append(deserialize(types[i], proto))
             return serialize(func(*args))
         def func_call(*args):
-            num_args = len(args)
-            arguments_type = num_args * c_uint64
-            arguments = arguments_type()
+            result = Args()
             for (i, arg) in enumerate(args):
-                arguments[i] = arg
-            return context.lib.orchestra_call(context.context, func.func_name, arguments, num_args)
+                result.args.add().objref = arg
+            data = result.SerializeToString()
+            return context.lib.orchestra_call(context.context, func.func_name, data, len(data))
         func_call.name = func.func_name
         func_call.is_distributed = True
         func_call.executor = func_executor

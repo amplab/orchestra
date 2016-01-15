@@ -22,11 +22,18 @@ use client::{Context};
 use std::ffi::CStr;
 use std::mem::transmute;
 use std::str;
+use protobuf::{CodedInputStream, Message};
 
 fn string_from_c(string: *const c_char) -> String {
     let c_str: &CStr = unsafe { CStr::from_ptr(string) };
     let str_slice: &str = str::from_utf8(c_str.to_bytes()).unwrap();
     return str_slice.to_owned();
+}
+
+#[repr(C)]
+struct Slice {
+    len: size_t,
+    data: *const uint8_t
 }
 
 #[no_mangle]
@@ -81,20 +88,39 @@ pub extern "C" fn orchestra_store_result(context: *mut Context, objref: size_t, 
     unsafe { (*context).add_object(objref, data.to_vec()) };
 }
 
+pub fn args_from_c(args: *const uint8_t, argslen: size_t) -> comm::Args {
+    let bytes = unsafe { slice::from_raw_parts::<u8>(args, argslen as usize) };
+    let mut result = comm::Args::new();
+    let mut is = CodedInputStream::from_bytes(bytes);
+    result.merge_from(&mut is).unwrap();
+    return result;
+}
+
+/*
+pub fn result_to_c(context: *mut Context, result: comm::Args) -> Slice {
+    unsafe {
+        result.write_to_writer(&mut (*context).result).unwrap();
+        return Slice { len: (*context).result[..].len() as u64, data: (*context).result[..].as_ptr() }
+    }
+}
+*/
+
 #[no_mangle]
-pub extern "C" fn orchestra_call(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t) -> size_t {
+pub extern "C" fn orchestra_call(context: *mut Context, name: *const c_char, args: *const uint8_t, argslen: size_t) -> size_t {
     let name = string_from_c(name);
-    let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
-    unsafe { (*context).remote_call_function(name, args) }
+    let arguments = args_from_c(args, argslen);
+    unsafe {
+        return (*context).remote_call_function(name, arguments);
+    }
 }
 
 /// retlist needs to be preallocated on caller side
 #[no_mangle]
-pub extern "C" fn orchestra_map(context: *mut Context, name: *const c_char, arguments: *const size_t, arglen: size_t, retlist: *mut size_t) {
+pub extern "C" fn orchestra_map(context: *mut Context, name: *const c_char, args: *const uint8_t, argslen: size_t, retlist: *mut size_t) {
     let name = string_from_c(name);
-    let args = unsafe { slice::from_raw_parts::<u64>(arguments, arglen as usize) };
+    let arguments = args_from_c(args, argslen);
     unsafe {
-        let result = (*context).remote_call_map(name, args);
+        let result = (*context).remote_call_map(name, arguments);
         for (i, elem) in result.iter().enumerate() {
             *retlist.offset(i as isize) = *elem;
         }

@@ -13,10 +13,14 @@ message Arg {
   repeated bytes data = 2; // or call-by-value for small objects
 }
 
+message Args {
+  repeated Arg args = 1;
+}
+
 message Call {
   optional string name = 1;
-  repeated uint64 args = 2;
-  repeated uint64 result = 3; // typically a singleton, a list for map calls
+  optional Args args = 2;
+  repeated uint64 result = 3;
   enum Type {
     INVOKE_CALL = 1; // normal function call
     MAP_CALL = 2; // perform a map

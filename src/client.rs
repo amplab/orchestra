@@ -3,11 +3,13 @@ use zmq;
 use zmq::{Socket};
 
 use comm;
-use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket};
+use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket, push_objrefs};
 use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+
+use protobuf::RepeatedField;
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
@@ -229,12 +231,12 @@ impl Context {
     pub fn get_type<'b>(self: &'b mut Context, name: String) -> Option<i32> {
         return self.types.get(&name).and_then(|&num| Some(num));
     }
-    pub fn remote_call_function<'b>(self: &'b mut Context, name: String, args: &[ObjRef]) -> ObjRef {
+    pub fn remote_call_function<'b>(self: &'b mut Context, name: String, args: comm::Args) -> ObjRef {
         let mut msg = comm::Message::new();
         msg.set_field_type(comm::MessageType::INVOKE);
         let mut call = comm::Call::new();
         call.set_name(name);
-        call.set_args(args.to_vec());
+        call.set_args(args);
         msg.set_call(call);
         send_message(&mut self.request, &mut msg);
         let answer = receive_message(&mut self.request);
@@ -243,17 +245,17 @@ impl Context {
         return result[0];
     }
     // TODO: Remove duplication between remote_call_function and remote_call_map
-    pub fn remote_call_map<'b>(self: &'b mut Context, name: String, args: &[ObjRef]) -> Vec<ObjRef> {
+    pub fn remote_call_map<'b>(self: &'b mut Context, name: String, args: comm::Args) -> Vec<ObjRef> {
         let mut msg = comm::Message::new();
         msg.set_field_type(comm::MessageType::INVOKE);
         let mut call = comm::Call::new();
         call.set_field_type(comm::Call_Type::MAP_CALL);
         call.set_name(name);
-        call.set_args(args.to_vec());
+        call.set_args(args);
         msg.set_call(call);
         send_message(&mut self.request, &mut msg);
         let answer = receive_message(&mut self.request);
-        return answer.get_call().get_result().to_vec();
+        return answer.get_call().get_result().to_vec(); // TODO: get rid of this copy
     }
     pub fn pull_remote_object<'b>(self: &'b mut Context, objref: ObjRef) -> ObjRef {
         {
@@ -342,9 +344,12 @@ impl Context {
                     let mut args = vec!();
                     {
                         let objects = self.objects.lock().unwrap();
-                        for elem in call.get_args().iter() {
-                            if !objects.contains_key(elem) {
-                                args.push(*elem);
+                        for elem in call.get_args().get_args() {
+                            if elem.has_objref() {
+                                let objref = elem.get_objref();
+                                if !objects.contains_key(&objref) {
+                                    args.push(objref);
+                                }
                             }
                         }
                     }
@@ -362,7 +367,8 @@ impl Context {
                 State::Processing {ref call, ref deps} => {
                     if deps.len() == 0 {
                         // calling the function
-                        self.args = call.get_args().to_vec();
+                        self.args.clear();
+                        push_objrefs(call.get_args(), &mut self.args);
                         let name = call.get_name().to_string();
                         self.function = self.functions.get(&name).expect("function not found").clone();
                         let result = call.get_result();

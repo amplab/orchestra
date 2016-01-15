@@ -2,7 +2,7 @@ use comm;
 use graph;
 use scheduler;
 use scheduler::{Scheduler, Event};
-use utils::{send_message, receive_message, receive_ack, send_ack, bind_socket};
+use utils::{send_message, receive_message, receive_ack, send_ack, bind_socket, push_objrefs};
 use utils::{WorkerID, ObjRef, ObjTable, FnTable};
 use graph::CompGraph;
 use rand;
@@ -17,7 +17,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::sync::{Arc, RwLock, Mutex, MutexGuard, RwLockReadGuard};
 use std::collections::HashMap;
-use protobuf::Message;
+use protobuf::{Message, RepeatedField};
 use std::iter::Iterator;
 
 /// Contains informations about worker.
@@ -154,7 +154,8 @@ impl WorkerPool {
             send_function_call(&mut socket, request.get_call().get_name(), request.get_call().get_args(), results[0]);
             receive_ack(&mut socket); // TODO: Avoid this round trip
             // deduplicate: (TODO: get rid of inefficiency):
-            let mut args = request.get_call().get_args().to_vec();
+            let mut args = Vec::new();
+            push_objrefs(request.get_call().get_args(), &mut args);
             args.sort();
             args.dedup();
             info!("sending args {:?}", request.get_call().get_args());
@@ -242,10 +243,10 @@ impl<'a> Server<'a> {
   }
 
   /// Add a map call to the computation graph.
-  pub fn add_map<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b [ObjRef]) -> Vec<ObjRef> {
+  pub fn add_map<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b comm::Args) -> Vec<ObjRef> {
     // TODO: Do this with only one lock
     let mut result = Vec::new();
-    for arg in args {
+    for arg in args.get_args() {
       let objref = self.register_new_object();
       result.push(objref);
     }
@@ -263,17 +264,21 @@ impl<'a> Server<'a> {
   /// Add a worker's request for evaluation to the computation graph and notify the scheduler.
   pub fn add_request<'b>(self: &'b mut Server<'a>, call: &'b comm::Call) -> comm::Message {
     let mut call = call.clone();
+    let mut args = Vec::new();
+    push_objrefs(call.get_args(), &mut args);
     if call.get_field_type() == comm::Call_Type::INVOKE_CALL {
-      let objref = self.add_call(call.get_name().into(), call.get_args());
+      let objref = self.add_call(call.get_name().into(), &args[..]);
       call.set_result(vec!(objref));
       self.workerpool.queue_job(call.clone()); // can we get rid of this clone?
     }
     if call.get_field_type() == comm::Call_Type::MAP_CALL {
       let objrefs = self.add_map(call.get_name().into(), call.get_args());
       // Add to the scheduler
-      for (arg, res) in call.get_args().iter().zip(objrefs.iter()) {
+      for (arg, res) in call.get_args().get_args().iter().zip(objrefs.iter()) {
         let mut c = comm::Call::new();
-        c.set_args(vec!(*arg));
+        let mut a = comm::Args::new();
+        a.set_args(RepeatedField::from_vec(vec!((*arg).clone()))); // TODO: copy needed?
+        c.set_args(a);
         c.set_result(vec!(*res));
         c.set_name(call.get_name().into());
         // INVOKE_CALL is already the default
@@ -373,13 +378,13 @@ impl<'a> Server<'a> {
 }
 
 /// Send request for function execution to a worker through the socket `socket`.
-pub fn send_function_call(socket: &mut Socket, name: &str, arguments: &[ObjRef], result: ObjRef) {
+pub fn send_function_call(socket: &mut Socket, name: &str, arguments: &comm::Args, result: ObjRef) {
   let mut message = comm::Message::new();
   message.set_field_type(comm::MessageType::INVOKE);
   let mut call = comm::Call::new();
   call.set_field_type(comm::Call_Type::INVOKE_CALL);
   call.set_name(name.into());
-  call.set_args(arguments.to_vec());
+  call.set_args(arguments.clone()); // TODO: get rid of this copy
   call.set_result(vec!(result));
   message.set_call(call);
   send_message(socket, &mut message);

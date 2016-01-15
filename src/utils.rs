@@ -47,6 +47,14 @@ fn test_args_to_send() {
   assert_eq!(res, vec!(3, 5));
 }
 
+pub fn push_objrefs(args: &comm::Args, result: &mut Vec<ObjRef>) {
+  for elem in args.get_args() {
+    if elem.has_objref() {
+      result.push(elem.get_objref());
+    }
+  }
+}
+
 /// Serialize a protocol buffer message to bytes.
 pub fn make_message(message: &comm::Message) -> Vec<u8> {
   let mut buf : Vec<u8> = Vec::new();
@@ -58,6 +66,11 @@ pub fn make_message(message: &comm::Message) -> Vec<u8> {
 pub fn send_message(socket: &mut Socket, message: &mut comm::Message) {
   let buff = make_message(message);
   socket.send(buff.as_slice(), 0).unwrap();
+}
+
+pub fn parse_message(bytes: &[u8]) -> comm::Message {
+    let mut read_buf = Cursor::new(bytes);
+    return protobuf::parse_from_reader(&mut read_buf).unwrap();
 }
 
 /// Receive a protocol buffer message over a socket.

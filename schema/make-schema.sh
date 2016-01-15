@@ -5,3 +5,6 @@ protoc --rust_out ../src/ types.proto
 # for python
 protoc --python_out ../lib/python comm.proto
 protoc --python_out ../lib/python types.proto
+
+# for cprotobuf
+protoc --cprotobuf_out ../lib/python comm.proto types.proto

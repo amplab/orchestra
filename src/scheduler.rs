@@ -112,9 +112,11 @@ impl Scheduler {
   }
 
   fn can_run(self: &Scheduler, job: &comm::Call, objtable: &MutexGuard<ObjTable>) -> bool {
-    for objref in job.get_args() {
-      if objtable[*objref as usize].len() == 0 {
-        return false;
+    for elem in job.get_args().get_args() {
+      if elem.has_objref() {
+        if objtable[elem.get_objref() as usize].len() == 0 {
+          return false;
+        }
       }
     }
     return true;

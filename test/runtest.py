@@ -78,7 +78,7 @@ class MatMulTest(OrchestraTest):
         # import IPython
         # IPython.embed()
 
-        # assertTrue(np.linalg.norm(A.dot(A) - B) <= 1e-4)
+        self.assertTrue(np.linalg.norm(A.dot(A) - B) <= 1e-4)
 
 if __name__ == '__main__':
     unittest.main()
