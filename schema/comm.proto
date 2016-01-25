@@ -8,13 +8,9 @@
 // immutable blob of data which for fault tolerance and efficiency reasons is
 // distributed among a number of clients.
 
-message Arg {
-  optional uint64 objref = 1; // can either be call-by-reference for large objects
-  repeated bytes data = 2; // or call-by-value for small objects
-}
-
 message Args {
-  repeated Arg args = 1;
+  repeated int64 objrefs = 1; // negative objrefs are indices into the data array, nonnegative ones are objrefs
+  repeated bytes data = 2;
 }
 
 message Call {

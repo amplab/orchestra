@@ -158,7 +158,7 @@ impl WorkerPool {
             push_objrefs(request.get_call().get_args(), &mut args);
             args.sort();
             args.dedup();
-            info!("sending args {:?}", request.get_call().get_args());
+            info!("sending args {:?}", args);
             for objref in args.iter() {
               WorkerPool::deliver_object(workerid, *objref, &workers, &objtable, &publish_notify)
             }
@@ -246,7 +246,7 @@ impl<'a> Server<'a> {
   pub fn add_map<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b comm::Args) -> Vec<ObjRef> {
     // TODO: Do this with only one lock
     let mut result = Vec::new();
-    for arg in args.get_args() {
+    for arg in args.get_objrefs() {
       let objref = self.register_new_object();
       result.push(objref);
     }
@@ -274,10 +274,10 @@ impl<'a> Server<'a> {
     if call.get_field_type() == comm::Call_Type::MAP_CALL {
       let objrefs = self.add_map(call.get_name().into(), call.get_args());
       // Add to the scheduler
-      for (arg, res) in call.get_args().get_args().iter().zip(objrefs.iter()) {
+      for (arg, res) in call.get_args().get_objrefs().iter().zip(objrefs.iter()) {
         let mut c = comm::Call::new();
         let mut a = comm::Args::new();
-        a.set_args(RepeatedField::from_vec(vec!((*arg).clone()))); // TODO: copy needed?
+        a.set_objrefs(vec!((*arg).clone())); // TODO: copy needed?
         c.set_args(a);
         c.set_result(vec!(*res));
         c.set_name(call.get_name().into());
@@ -315,7 +315,7 @@ impl<'a> Server<'a> {
     match msg.get_field_type() {
       comm::MessageType::INVOKE => {
         let mut message = self.add_request(msg.get_call());
-        info!("add request {:?} {:?}, result {:?}", msg.get_call().get_field_type(), msg.get_call().get_name(), message.get_call().get_result());
+        // info!("add request {:?} {:?}, result {:?}", msg.get_call().get_field_type(), msg.get_call().get_name(), message.get_call().get_result());
         send_message(socket, &mut message);
       },
       comm::MessageType::REGISTER_CLIENT => {

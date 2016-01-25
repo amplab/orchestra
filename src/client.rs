@@ -3,13 +3,13 @@ use zmq;
 use zmq::{Socket};
 
 use comm;
-use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket, push_objrefs};
+use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket};
 use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 
-use protobuf::RepeatedField;
+use protobuf::{Message, RepeatedField};
 
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
@@ -41,7 +41,7 @@ pub struct Context {
 
     state: State, // Some(call) if function call has just been evaluated and None otherwise
     function: FnRef, // function that is currently active
-    args: Vec<ObjRef>, // objrefs to the arguments of current function call
+    pub args: Vec<u8>, // serialized version of the Args datastructure
 
     notify_main: Receiver<Event>, // reply thread signals main thread
     request: Socket,
@@ -188,9 +188,7 @@ impl Context {
     pub fn add_object<'b>(self: &'b mut Context, objref: ObjRef, data: Vec<u8>) {
         self.objects.lock().unwrap().insert(objref, data);
     }
-    pub fn get_num_args<'b>(self: &'b Context) -> usize {
-        return self.args.len();
-    }
+
     pub fn add_function<'b>(self: &'b mut Context, name: String) -> usize {
         info!("registering function {}", name);
         let idx = self.functions.len();
@@ -210,19 +208,10 @@ impl Context {
     }
     // TODO: Make this more efficient, i.e. use only one lookup
     pub fn get_obj_len<'b>(self: &'b Context, objref: ObjRef) -> Option<usize> {
-        let result = self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].len()));
-        return result;
+        self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].len()))
     }
     pub fn get_obj_ptr<'b>(self: &'b Context, objref: ObjRef) -> Option<*const u8> {
-        let result = self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].as_ptr()));
-        return result;
-    }
-    pub fn get_arg_len<'b>(self: &'b Context, argidx: usize) -> Option<usize> {
-        return self.get_obj_len(self.args[argidx]);
-    }
-    pub fn get_arg_ptr<'b>(self: &'b Context, argidx: usize) -> Option<*const u8> {
-        // println!("getting pointer for object {}", self.args[argidx]);
-        return self.get_obj_ptr(self.args[argidx]);
+        self.objects.lock().unwrap().get(&objref).and_then(|data| Some(data[..].as_ptr()))
     }
     pub fn add_type<'b>(self: &'b mut Context, name: String) {
         let index = self.types.len();
@@ -344,9 +333,9 @@ impl Context {
                     let mut args = vec!();
                     {
                         let objects = self.objects.lock().unwrap();
-                        for elem in call.get_args().get_args() {
-                            if elem.has_objref() {
-                                let objref = elem.get_objref();
+                        for elem in call.get_args().get_objrefs() {
+                            if *elem > 0 {
+                                let objref = *elem as u64;
                                 if !objects.contains_key(&objref) {
                                     args.push(objref);
                                 }
@@ -366,9 +355,10 @@ impl Context {
                 State::Waiting => {},
                 State::Processing {ref call, ref deps} => {
                     if deps.len() == 0 {
-                        // calling the function
+                        // serializing args datastructure
                         self.args.clear();
-                        push_objrefs(call.get_args(), &mut self.args);
+                        call.get_args().write_to_writer(&mut self.args).unwrap();
+                        // calling the function
                         let name = call.get_name().to_string();
                         self.function = self.functions.get(&name).expect("function not found").clone();
                         let result = call.get_result();

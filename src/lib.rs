@@ -31,8 +31,8 @@ fn string_from_c(string: *const c_char) -> String {
 }
 
 #[repr(C)]
-struct Slice {
-    len: size_t,
+pub struct Slice {
+    len: usize,
     data: *const uint8_t
 }
 
@@ -166,18 +166,8 @@ pub extern "C" fn orchestra_function_index(context: *mut Context) -> usize {
 }
 
 #[no_mangle]
-pub extern "C" fn orchestra_num_args(context: *mut Context) -> usize {
-    unsafe { (*context).get_num_args() }
-}
-
-#[no_mangle]
-pub extern "C" fn orchestra_get_arg_len(context: *mut Context, argidx: usize) -> usize {
-    unsafe { (*context).get_arg_len(argidx).expect("argument reference not found") }
-}
-
-#[no_mangle]
-pub extern "C" fn orchestra_get_arg_ptr(context: *mut Context, argidx: usize) -> *const uint8_t {
-    unsafe { (*context).get_arg_ptr(argidx).expect("argument reference not found") }
+pub extern "C" fn orchestra_get_args(context: *mut Context) -> Slice {
+    unsafe { return Slice { len: (*context).args[..].len(), data: (*context).args[..].as_ptr() } }
 }
 
 #[no_mangle]

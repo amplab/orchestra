@@ -5,6 +5,7 @@ use protobuf::core::MessageStatic;
 use zmq;
 use zmq::{Socket};
 use std::io::Cursor;
+use std::ops::{Deref};
 use std::collections::HashMap;
 use rand;
 use rand::distributions::{IndependentSample, Range};
@@ -48,37 +49,26 @@ fn test_args_to_send() {
 }
 
 pub fn push_objrefs(args: &comm::Args, result: &mut Vec<ObjRef>) {
-  for elem in args.get_args() {
-    if elem.has_objref() {
-      result.push(elem.get_objref());
+  for elem in args.get_objrefs() {
+    if *elem > 0 {
+      result.push(*elem as u64);
     }
   }
 }
 
-/// Serialize a protocol buffer message to bytes.
-pub fn make_message(message: &comm::Message) -> Vec<u8> {
-  let mut buf : Vec<u8> = Vec::new();
-  message.write_to_writer(&mut buf).unwrap();
-  return buf;
-}
-
 /// Send a protocol buffer message on a socket.
 pub fn send_message(socket: &mut Socket, message: &mut comm::Message) {
-  let buff = make_message(message);
-  socket.send(buff.as_slice(), 0).unwrap();
-}
-
-pub fn parse_message(bytes: &[u8]) -> comm::Message {
-    let mut read_buf = Cursor::new(bytes);
-    return protobuf::parse_from_reader(&mut read_buf).unwrap();
+  let mut buf = Vec::new();
+  message.write_to_vec(&mut buf).unwrap();
+  socket.send(buf.as_slice(), 0).unwrap();
 }
 
 /// Receive a protocol buffer message over a socket.
 pub fn receive_message(socket: &mut Socket) -> comm::Message {
   let mut msg = zmq::Message::new().unwrap();
   socket.recv(&mut msg, 0).unwrap();
-  let mut read_buf = Cursor::new(msg.as_mut());
-  return protobuf::parse_from_reader(&mut read_buf).unwrap();
+  let mut input_stream = protobuf::CodedInputStream::from_bytes(msg.deref());
+  return protobuf::core::parse_from::<comm::Message>(&mut input_stream).unwrap();
 }
 
 /// Receive a protocol buffer message through a subscription socket.
