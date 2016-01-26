@@ -5,6 +5,7 @@ from cpython cimport array
 import array
 import cprotobuf
 import numpy as np
+import unison
 import orchpy.protos_pb as pb
 import types
 
@@ -32,18 +33,6 @@ cdef inline str get_elements(bytearray buf, int start, int len):
   cdef char *buff = PyByteArray_AS_STRING(buf)
   return PyString_FromStringAndSize(buff + start, len)
 
-cpdef serialize_primitive(bytearray buf, val):
-  if type(val) == int or type(val) == long:
-    raw_encode_uint64(buf, <uint64_t>val)
-  elif type(val) == float:
-    encode_float(buf, val)
-  elif type(val) == str or type(val) == unicode:
-    encode_string(buf, val)
-  elif type(val) == np.ndarray:
-    array = array_to_proto(val)
-    cprotobuf.encode_data(buf, type(array), array.__dict__)
-
-
 cpdef serialize_args(args):
   result = pb.Args()
   cdef bytearray buf = bytearray()
@@ -55,28 +44,13 @@ cpdef serialize_args(args):
       objrefs.append(get_id(arg))
     else:
       prev_index = len(buf)
-      serialize_primitive(buf, arg)
+      unison.serialize(buf, arg)
       data.append(get_elements(buf, prev_index, len(buf) - prev_index))
       prev_index = len(buf)
       objrefs.append(-len(data))
   result.objrefs = objrefs
   result.data = data
   return result
-
-cpdef object deserialize(bytes data, type t):
-  cdef char *buff = <char*>data
-  cdef Py_ssize_t size = len(data)
-  cdef char *end = buff + size
-  if t == int or t == long:
-    return decode_uint64(&buff, end)
-  if t == float:
-    return decode_float(&buff, end)
-  if t == str or t == unicode:
-    return decode_string(&buff, end)
-  if t == np.ndarray:
-    array = pb.Array()
-    array.ParseFromString(data)
-    return proto_to_array(array)
 
 cpdef deserialize_args(args, types):
   result = []
@@ -85,40 +59,7 @@ cpdef deserialize_args(args, types):
     if elem >= 0:
       result.append(ObjRef(elem))
     else:
-      result.append(deserialize(args.data[-elem-1], types[k]))
-  return result
-
-cdef int numpy_dtype_to_proto(dtype):
-  if dtype == np.dtype('int32'):
-    return pb.INT32
-  if dtype == np.dtype('int64'):
-    return pb.INT64
-  if dtype == np.dtype('float32'):
-    return pb.FLOAT32
-  if dtype == np.dtype('float64'):
-    return pb.FLOAT64
-
-cpdef array_to_proto(array):
-  result = pb.Array()
-  result.shape.extend(array.shape)
-  result.data = np.getbuffer(array, 0, array.size * array.dtype.itemsize)
-  result.dtype = numpy_dtype_to_proto(array.dtype)
-  return result
-
-cdef proto_dtype_to_numpy(dtype):
-  if dtype == pb.INT32:
-    return np.dtype('int32')
-  if dtype == pb.INT64:
-    return np.dtype('int64')
-  if dtype == pb.FLOAT32:
-    return np.dtype('float32')
-  if dtype == pb.FLOAT64:
-    return np.dtype('float64')
-
-cpdef proto_to_array(proto):
-  dtype = proto_dtype_to_numpy(proto.dtype)
-  result = np.frombuffer(proto.data, dtype=dtype)
-  result.shape = proto.shape
+      result.append(unison.deserialize(args.data[-elem-1], types[k]))
   return result
 
 cdef struct Slice:
@@ -163,7 +104,7 @@ cdef class Context:
     ptr = orchestra_get_obj_ptr(self.context, index)
     len = orchestra_get_obj_len(self.context, index)
     data = PyBytes_FromStringAndSize(ptr, len)
-    return deserialize(data, type)
+    return unison.deserialize(data, type)
 
   def main_loop(self):
     cdef size_t objref = 0
@@ -221,7 +162,7 @@ def distributed(*types):
               else:
                 arguments.append(proto)
             buf = bytearray()
-            serialize_primitive(buf, func(*arguments))
+            unison.serialize(buf, func(*arguments))
             return memoryview(buf).tobytes()
         def func_call(*args):
             return context.call(func.func_name, serialize_args(args).SerializeToString())
