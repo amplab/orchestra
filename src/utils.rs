@@ -50,7 +50,7 @@ fn test_args_to_send() {
 
 pub fn push_objrefs(args: &comm::Args, result: &mut Vec<ObjRef>) {
   for elem in args.get_objrefs() {
-    if *elem > 0 {
+    if *elem >= 0 {
       result.push(*elem as u64);
     }
   }

@@ -1,8 +1,12 @@
 #cython.wraparound=False
 #cython.boundscheck=False
 cimport cython
+from cpython cimport array
+import array
+import cprotobuf
 import numpy as np
 import orchpy.protos_pb as pb
+import types
 
 include "utils.pxi"
 
@@ -35,6 +39,10 @@ cpdef serialize_primitive(bytearray buf, val):
     encode_float(buf, val)
   elif type(val) == str or type(val) == unicode:
     encode_string(buf, val)
+  elif type(val) == np.ndarray:
+    array = array_to_proto(val)
+    cprotobuf.encode_data(buf, type(array), array.__dict__)
+
 
 cpdef serialize_args(args):
   result = pb.Args()
@@ -65,6 +73,10 @@ cpdef object deserialize(bytes data, type t):
     return decode_float(&buff, end)
   if t == str or t == unicode:
     return decode_string(&buff, end)
+  if t == np.ndarray:
+    array = pb.Array()
+    array.ParseFromString(data)
+    return proto_to_array(array)
 
 cpdef deserialize_args(args, types):
   result = []
@@ -119,9 +131,11 @@ cdef extern size_t orchestra_step(void* context)
 cdef extern Slice orchestra_get_args(void* context)
 cdef extern size_t orchestra_function_index(void* context)
 cdef extern size_t orchestra_call(void* context, const char* name, const char* args, size_t argslen)
+cdef extern void orchestra_map(void* context, char* name, char* args, size_t argslen, size_t* retlist)
 cdef extern void orchestra_store_result(void* context, size_t objref, char* data, size_t datalen)
 cdef extern size_t orchestra_get_obj_len(void* Context, size_t objref)
 cdef extern char* orchestra_get_obj_ptr(void* context, size_t objref)
+cdef extern size_t orchestra_pull(void* context, size_t objref)
 cdef extern void orchestra_debug_info(void* context)
 cdef extern void orchestra_destroy_context(void* context)
 
@@ -168,12 +182,31 @@ cdef class Context:
   def call(self, name, args):
     return ObjRef(orchestra_call(self.context, name, args, len(args)))
 
+  def map(self, func, arglist):
+    args = serialize_args(arglist).SerializeToString()
+    cdef array.array result = array.array('L', len(arglist) * [0]) # TODO(pcmoritz) This might be slow
+    orchestra_map(self.context, func.name, args, len(args), <size_t*>result.data.as_voidptr)
+    retlist = []
+    for elem in result:
+      retlist.append(ObjRef(elem))
+    return retlist
+
   """Register a function that can be called remotely."""
   def register(self, name, function, *args):
     fnid = orchestra_register_function(self.context, name)
     assert(fnid == len(self.functions))
     self.functions.append(function)
     self.arg_types.append(args)
+
+  def pull(self, type, objref):
+    objref = orchestra_pull(self.context, objref.get_id())
+    return self.get_object(ObjRef(objref), type)
+
+  # This will eventually be moved into the tensor library
+  def assemble(self, objref):
+        """Assemble an array on this node from a distributed array object reference."""
+        dist_array = self.pull(np.ndarray, objref)
+        return np.vstack([np.hstack([self.pull(np.ndarray, ObjRef(objref)) for objref in row]) for row in dist_array])
 
 context = Context()
 
@@ -198,3 +231,11 @@ def distributed(*types):
         func_call.types = types
         return func_call
     return distributed_decorator
+
+def register_current(globallist):
+  for (name, val) in globallist:
+    try:
+      if val.is_distributed:
+        context.register(name, val.executor, *val.types)
+    except AttributeError:
+      pass

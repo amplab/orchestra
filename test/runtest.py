@@ -1,6 +1,6 @@
 import subprocess, os, signal, time, socket, psutil
 import unittest
-import orchestra
+import orchpy as op
 from random import randint
 import numpy as np
 
@@ -24,7 +24,7 @@ class OrchestraTest(unittest.TestCase):
         self.master = subprocess.Popen(["cargo", "run", "--bin", "orchestra", "--", incoming_port, publish_port], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
         self.workers = map(lambda worker: subprocess.Popen(["python", "mapreduce.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
         self.workers = map(lambda worker: subprocess.Popen(["python", "matmul.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
-        orchestra.context.connect("tcp://127.0.0.1:" + incoming_port, "tcp://127.0.0.1:" + str(get_unused_port()), int(publish_port))
+        op.context.connect("tcp://127.0.0.1:" + incoming_port, "tcp://127.0.0.1:" + str(get_unused_port()), int(publish_port))
 
     def tearDown(self):
         os.killpg(self.master.pid, signal.SIGTERM)
@@ -38,11 +38,11 @@ class CallTest(OrchestraTest):
 
         import mapreduce
         M = mapreduce.zeros()
-        res = orchestra.context.pull(np.ndarray, M)
+        res = op.context.pull(np.ndarray, M)
         self.assertTrue(np.linalg.norm(res) < 1e-5)
 
         M = mapreduce.create_dist_array()
-        res = orchestra.context.pull(np.ndarray, M)
+        res = op.context.pull(np.ndarray, M)
 
 class MapTest(OrchestraTest):
 
@@ -55,9 +55,9 @@ class MapTest(OrchestraTest):
         args = []
         for i in range(m):
             args.append(mapreduce.zeros())
-        res = orchestra.context.map(plusone, args)
+        res = op.context.map(plusone, args)
         for i in range(m):
-            mat = orchestra.context.pull(np.ndarray, res[i])
+            mat = op.context.pull(np.ndarray, res[i])
 
 class MatMulTest(OrchestraTest):
 
@@ -72,13 +72,18 @@ class MatMulTest(OrchestraTest):
         M = mapreduce.create_dist_array()
         res = matmul.matrix_multiply(M, M)
 
-        A = orchestra.context.assemble(M)
-        B = orchestra.context.assemble(res)
-
-        # import IPython
-        # IPython.embed()
+        A = op.context.assemble(M)
+        B = op.context.assemble(res)
 
         self.assertTrue(np.linalg.norm(A.dot(A) - B) <= 1e-4)
+
+class CallByValueTest(OrchestraTest):
+
+    def testCallByValue(self):
+        time.sleep(0.5)
+
+        import mapreduce
+        res = mapreduce.str_identity("hello world")
 
 if __name__ == '__main__':
     unittest.main()

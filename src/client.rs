@@ -334,7 +334,7 @@ impl Context {
                     {
                         let objects = self.objects.lock().unwrap();
                         for elem in call.get_args().get_objrefs() {
-                            if *elem > 0 {
+                            if *elem >= 0 {
                                 let objref = *elem as u64;
                                 if !objects.contains_key(&objref) {
                                     args.push(objref);
