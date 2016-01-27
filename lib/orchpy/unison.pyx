@@ -85,6 +85,10 @@ cpdef serialize(bytearray buf, val):
     data = proto.SerializeToString()
     serialize(buf, len(data))
     buf.extend(data)
+  else:
+    data = val.proto.SerializeToString()
+    serialize(buf, len(data))
+    buf.extend(data)
 
 cdef object deserialize_primitive(char **buff, char *end, type t):
   if t == int or t == long:
@@ -100,6 +104,14 @@ cdef object deserialize_primitive(char **buff, char *end, type t):
     array = pb.Array()
     array.ParseFromString(data)
     return proto_to_array(array)
+  else:
+    size = deserialize_primitive(buff, end, int)
+    data = PyString_FromStringAndSize(buff[0], size)
+    buff[0] += size
+    result = t()
+    result.deserialize(data)
+    return result
+
 
 cdef object deserialize_buffer(char **buff, char *end, schema):
   if type(schema) == type:

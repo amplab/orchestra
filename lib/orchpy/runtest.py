@@ -3,7 +3,7 @@ import numpy as np
 import orchpy as op
 import unison
 import subprocess, os, socket, signal
-from testprograms import zeros, testfunction
+from testprograms import zeros, testfunction, testobjrefs
 
 
 def get_unused_port():
@@ -73,6 +73,10 @@ class ClientTest(unittest.TestCase):
     op.context.debug_info()
 
     zeros([100, 100])
+    objrefs = testobjrefs()
+
+    res = op.context.pull(op.ObjRefs, objrefs)
+
 
   def tearDown(self):
     os.killpg(self.master.pid, signal.SIGTERM)

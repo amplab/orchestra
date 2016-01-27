@@ -12,6 +12,10 @@ parser.add_argument('subscriber_port', type=int, help='the port used to set up t
 def testfunction(a, b, c):
   return a
 
+@op.distributed(op.ObjRefs)
+def testobjrefs():
+  return op.ObjRefs((10,10))
+
 @op.distributed(unison.List[int], np.ndarray)
 def zeros(shape):
   return np.zeros(shape)
