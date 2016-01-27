@@ -49,6 +49,7 @@ Build orchpy
 - cd `~/orchestra/lib/orchpy/`
 - `python setup.py build`
 - add something like `export PYTHONPATH=PATH_TO_ORCHESTRA/orchestra/lib/orchpy/build/lib.linux-x86_64-2.7:$PYTHONPATH` to `~/.bashrc`, this will vary depending on your operating system
+- add something like `export PYTHONPATH=PATH_TO_ORCHESTRA/orchestra/lib:$PYTHONPATH` to `~/.bashrc`
 - `source ~/.bashrc`
 
 Add Orchestra to your python path
