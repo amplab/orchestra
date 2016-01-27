@@ -29,6 +29,13 @@ Build protobuf compiler
 - add the line `export PATH=$HOME/rust-protobuf/target/debug:$PATH` to `~/.bashrc`
 - `source ~/.bashrc`
 
+Install cprotobuf
+
+- `cd ~`
+- `git clone https://github.com/pcmoritz/cprotobuf.git`
+- `cd cprotobuf`
+- `python setup.py install`
+
 Clone Orchestra and create schema
 
 - `cd ~`
@@ -37,6 +44,12 @@ Clone Orchestra and create schema
 - `bash make-schema.sh`
 - `cd $HOME/orchestra`
 - add `export LD_LIBRARY_PATH=$HOME/orchestra/target/debug/:$LD_LIBRARY_PATH` to `~/.bashrc`
+
+Build orchpy
+- cd `~/orchestra/lib/orchpy/`
+- `python setup.py build`
+- add something like `export PYTHONPATH=PATH_TO_ORCHESTRA/orchestra/lib/orchpy/build/lib.linux-x86_64-2.7:$PYTHONPATH` to `~/.bashrc`, this will vary depending on your operating system
+- `source ~/.bashrc`
 
 Add Orchestra to your python path
 
