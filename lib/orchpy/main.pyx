@@ -120,7 +120,8 @@ cdef class Context:
       orchestra_store_result(self.context, objref, result, len(result))
 
   """Args is serialized version of the arguments."""
-  def call(self, name, args):
+  def call(self, name, arglist):
+    args = serialize_args(arglist).SerializeToString()
     return ObjRef(orchestra_call(self.context, name, args, len(args)))
 
   def map(self, func, arglist):
@@ -153,6 +154,7 @@ context = Context()
 
 def distributed(*types):
     def distributed_decorator(func):
+        # deserialize arguments, execute function and serialize result
         def func_executor(args):
             arguments = []
             protoargs = deserialize_args(args, types)
@@ -164,8 +166,9 @@ def distributed(*types):
             buf = bytearray()
             unison.serialize(buf, func(*arguments))
             return memoryview(buf).tobytes()
+        # for remotely executing the function
         def func_call(*args):
-            return context.call(func.func_name, serialize_args(args).SerializeToString())
+            return context.call(func.func_name, args)
         func_call.name = func.func_name
         func_call.is_distributed = True
         func_call.executor = func_executor

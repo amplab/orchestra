@@ -128,7 +128,7 @@ cdef object deserialize_buffer(char **buff, char *end, schema):
       result.append(deserialize_buffer(buff, end, schema[1]))
     return result
 
-cpdef object deserialize(bytes data, schema):
+cpdef object deserialize(data, schema):
   cdef char *buff = <char*>data
   cdef Py_ssize_t size = len(data)
   cdef char *end = buff + size
