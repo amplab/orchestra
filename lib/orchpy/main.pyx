@@ -180,3 +180,13 @@ def register_current(globallist):
         context.register(name, val.executor, *val.types)
     except AttributeError:
       pass
+
+def register_distributed(module):
+    moduledir = dir(module)
+    for name in moduledir:
+        val = getattr(module, name)
+        try:
+            if val.is_distributed:
+                context.register(name, val.executor, *val.types)
+        except AttributeError:
+            pass

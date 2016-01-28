@@ -4,6 +4,7 @@ import orchpy as op
 import unison
 import subprocess, os, socket, signal
 from testprograms import zeros, testfunction, testobjrefs
+import time
 
 
 def get_unused_port():
@@ -71,6 +72,8 @@ class ClientTest(unittest.TestCase):
     self.client_port = get_unused_port()
     op.context.connect("tcp://127.0.0.1:" + str(self.incoming_port), "tcp://127.0.0.1:" + str(self.client_port), self.publish_port)
     op.context.debug_info()
+
+    time.sleep(1.0) # todo(pcmoritz) fix this
 
     zeros([100, 100])
     objrefs = testobjrefs()
