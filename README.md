@@ -62,4 +62,4 @@ Add Orchestra to your python path
 In a terminal, run
 
 - `cd ~/orchestra/test`
-- `RUST_LOG=hermes=info python runtest.py`
+- `RUST_LOG=orchestra=info python runtest.py`
