@@ -56,10 +56,18 @@ cpdef deserialize_args(args, types):
   result = []
   for k in range(len(args.objrefs)):
     elem = args.objrefs[k]
-    if elem >= 0:
+    if elem >= 0: # then elem is an ObjRef
       result.append(ObjRef(elem))
-    else:
-      result.append(unison.deserialize(args.data[-elem-1], types[k]))
+    else: # then args[k] is being passed by value
+      if k < len(types) - 1:
+        arg_type = types[k]
+      elif k == len(types) - 1 and types[-1] is not None:
+        arg_type = types[k]
+      elif k == len(types) - 1 and types[-1] is None:
+        arg_type = types[-2]
+      else:
+        raise Exception()
+      result.append(unison.deserialize(args.data[-elem - 1], arg_type))
   return result
 
 cdef struct Slice:
@@ -152,7 +160,7 @@ cdef class Context:
 
 context = Context()
 
-def distributed(*types):
+def distributed(types, return_type):
     def distributed_decorator(func):
         # deserialize arguments, execute function and serialize result
         def func_executor(args):
@@ -160,7 +168,14 @@ def distributed(*types):
             protoargs = deserialize_args(args, types)
             for (i, proto) in enumerate(protoargs):
               if type(proto) == ObjRef:
-                arguments.append(context.get_object(proto, types[i]))
+                if i < len(types) - 1:
+                  arguments.append(context.get_object(proto, types[i]))
+                elif i == len(types) - 1 and types[-1] is not None:
+                  arguments.append(context.get_object(proto, types[i]))
+                elif types[-1] is None:
+                  arguments.append(context.get_object(proto, types[-2]))
+                else:
+                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.func_name + ", which takes only " + str(len(types)) + " arguments.")
               else:
                 arguments.append(proto)
             buf = bytearray()

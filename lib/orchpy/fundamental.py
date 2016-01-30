@@ -16,6 +16,10 @@ class ObjRefs(object):
     self.proto.ParseFromString(data)
     self.construct()
 
+  def from_proto(self, proto):
+    self.proto = proto
+    self.construct()
+
   def __init__(self, shape=None):
     self.proto = ObjRefsProto()
     if shape != None:
@@ -23,12 +27,12 @@ class ObjRefs(object):
       self.proto.objrefs = bytearray(np.product(shape) * np.dtype('uint64').itemsize)
       self.construct()
 
-  def __getitem__(self,index):
+  def __getitem__(self, index):
     result = self.array[index]
     if type(result) == np.uint64:
       return op.ObjRef(result)
     else:
       return np.vectorize(op.ObjRef)(result)
 
-  def __setitem__(self,index,val):
+  def __setitem__(self, index, val):
     self.array[index] = val.get_id()
