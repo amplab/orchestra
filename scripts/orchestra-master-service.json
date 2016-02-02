@@ -1,0 +1,30 @@
+{
+   "kind":"Service",
+   "apiVersion":"v1",
+   "metadata":{
+      "name":"orchestra-master",
+      "labels":{
+         "app":"orchestra",
+         "role":"master"
+      }
+   },
+   "spec":{
+      "clusterIP": "10.0.171.131",
+      "ports": [
+        {
+					"name": "incoming",
+          "port": 7114,
+          "targetPort": "orch-server"
+        },
+				{
+					"name": "publish",
+					"port":7227,
+					"targetPort":"orch-server"
+				}
+      ],
+      "selector":{
+         "app":"orchestra",
+         "role":"master"
+      }
+   }
+}
