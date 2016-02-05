@@ -7,6 +7,7 @@ use zmq::{Socket};
 use std::io::Cursor;
 use std::ops::{Deref};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use rand;
 use rand::distributions::{IndependentSample, Range};
 
@@ -93,22 +94,26 @@ pub fn receive_ack(socket: &mut Socket) {
   assert!(ack.get_field_type() == comm::MessageType::ACK);
 }
 
+pub fn to_zmq_socket_addr(addr: &IpAddr, port: u16) -> String {
+    return format!("tcp://{}:{}", addr, port).into();
+}
+
 /// Bind a ZeroMQ socket to specific address. If port is None, connect to a free port. Return port.
-pub fn bind_socket(socket: &mut Socket, host: &str, port: Option<u64>) -> u64 {
+pub fn bind_socket(socket: &mut Socket, host: &IpAddr, port: Option<u16>) -> u16 {
   match port {
     None => {
       loop {
         let mut rng = rand::thread_rng();
         let range = Range::new(2048, 65535);
         let port = range.ind_sample(&mut rng);
-        match socket.bind(&format!("tcp://{}:{}", host, port)[..]) {
+        match socket.bind(&to_zmq_socket_addr(host, port)[..]) {
           Ok(()) => { return port },
           Err(err) => { continue }
         }
       }
     }
     Some(port) => {
-      match socket.bind(&format!("tcp://{}:{}", host, port)[..]) {
+      match socket.bind(&to_zmq_socket_addr(host, port)[..]) {
         Ok(()) => { return port },
         Err(err) => { panic!("Could not bind socket. Make sure port {} is not used yet. {}", port, err) }
       }
@@ -117,8 +122,8 @@ pub fn bind_socket(socket: &mut Socket, host: &str, port: Option<u64>) -> u64 {
 }
 
 /// Connect a ZeroMQ socket to specific address
-pub fn connect_socket(socket: &mut Socket, host: &str, port: u64) {
-    match socket.connect(&format!("tcp://{}:{}", host, port)[..]) {
+pub fn connect_socket(socket: &mut Socket, host: &IpAddr, port: u16) {
+    match socket.connect(&to_zmq_socket_addr(host, port)[..]) {
         Ok(()) => {},
         Err(_) => { panic!("Could not connect socket. Make sure port is set correctly.") }
     }

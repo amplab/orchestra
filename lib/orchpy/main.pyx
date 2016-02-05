@@ -2,6 +2,7 @@
 #cython.boundscheck=False
 cimport cython
 from cpython cimport array
+from libc.stdint cimport uint16_t
 import array
 import cprotobuf
 import numpy as np
@@ -74,7 +75,7 @@ cdef struct Slice:
   size_t size
   char* ptr
 
-cdef extern void* orchestra_create_context(const char* server_addr, const char* client_addr, long subscriber_port)
+cdef extern void* orchestra_create_context(const char* server_addr, uint16_t reply_port, uint16_t publish_port, const char* client_addr, uint16_t client_port)
 cdef extern size_t orchestra_register_function(void* context, const char* name)
 cdef extern size_t orchestra_step(void* context)
 cdef extern Slice orchestra_get_args(void* context)
@@ -98,8 +99,8 @@ cdef class Context:
     self.functions = []
     self.arg_types = []
 
-  def connect(self, server_addr, client_addr, subscriber_port):
-    self.context = orchestra_create_context(server_addr, client_addr, subscriber_port)
+  def connect(self, server_addr, reply_port, publish_port, client_addr, client_port):
+    self.context = orchestra_create_context(server_addr, reply_port, publish_port, client_addr, client_port)
 
   def close(self):
     orchestra_destroy_context(self.context)

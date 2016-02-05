@@ -16,6 +16,8 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 use std::thread;
 use std::sync::{Arc, RwLock, Mutex, MutexGuard, RwLockReadGuard};
+use std::str::FromStr;
+use std::net::IpAddr;
 use std::collections::HashMap;
 use protobuf::{Message, RepeatedField};
 use std::iter::Iterator;
@@ -41,7 +43,7 @@ pub struct WorkerPool {
 
 impl WorkerPool {
   /// Create a new `WorkerPool`.
-  pub fn new(objtable: Arc<Mutex<ObjTable>>, fntable: Arc<RwLock<FnTable>>, publish_port: u64) -> WorkerPool {
+  pub fn new(objtable: Arc<Mutex<ObjTable>>, fntable: Arc<RwLock<FnTable>>, publish_port: u16) -> WorkerPool {
     let (publish_sender, publish_receiver) = mpsc::channel();
     let scheduler_notify = Scheduler::start(objtable, fntable);
     WorkerPool::start_publisher_thread(publish_receiver, publish_port);
@@ -49,11 +51,12 @@ impl WorkerPool {
   }
 
   /// Start the thread that is used to feed the PUB/SUB network between the server and the workers.
-  pub fn start_publisher_thread(publish_notify: Receiver<(WorkerID, comm::Message)>, publish_port: u64) {
+  pub fn start_publisher_thread(publish_notify: Receiver<(WorkerID, comm::Message)>, publish_port: u16) {
     thread::spawn(move || {
       let mut zmq_ctx = zmq::Context::new();
       let mut publisher = zmq_ctx.socket(zmq::PUB).unwrap();
-      bind_socket(&mut publisher, "*", Some(publish_port));
+      let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+      bind_socket(&mut publisher, &localhost, Some(publish_port));
       loop {
         match publish_notify.recv().unwrap() {
           (workerid, msg) => {
@@ -197,7 +200,7 @@ pub struct Server<'a> {
 
 impl<'a> Server<'a> {
   /// Create a new server.
-  pub fn new(publish_port: u64) -> Server<'a> {
+  pub fn new(publish_port: u16) -> Server<'a> {
     let mut ctx = zmq::Context::new();
 
     let objtable = Arc::new(Mutex::new(Vec::new()));
@@ -213,9 +216,10 @@ impl<'a> Server<'a> {
   }
 
   /// Start the server's main loop.
-  pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u64) {
+  pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u16) {
     let mut socket = self.zmq_ctx.socket(zmq::REP).ok().unwrap();
-    bind_socket(&mut socket, "127.0.0.1", Some(incoming_port));
+    let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+    bind_socket(&mut socket, &localhost, Some(incoming_port));
     loop {
       self.process_request(&mut socket);
     }
@@ -303,9 +307,10 @@ impl<'a> Server<'a> {
   }
 
   /// Establish the setup port that will be used for setting up the client server connection
-  fn bind_setup_socket(zmq_ctx: &mut zmq::Context) -> (Socket, u64) {
+  fn bind_setup_socket(zmq_ctx: &mut zmq::Context) -> (Socket, u16) {
     let mut setup_socket = zmq_ctx.socket(zmq::REP).ok().unwrap();
-    let port = bind_socket(&mut setup_socket, "*", None);
+    let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+    let port = bind_socket(&mut setup_socket, &localhost, None);
     return (setup_socket, port)
   }
 
@@ -325,7 +330,7 @@ impl<'a> Server<'a> {
         let mut ack = comm::Message::new();
         ack.set_field_type(comm::MessageType::ACK);
         ack.set_workerid(workerid as u64);
-        ack.set_setup_port(setup_port);
+        ack.set_setup_port(setup_port as u64);
         send_message(socket, &mut ack);
         self.workerpool.register(&mut self.zmq_ctx, msg.get_address(), self.objtable.clone(), &mut setup_socket);
       },

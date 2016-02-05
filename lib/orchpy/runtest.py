@@ -60,17 +60,17 @@ numworkers = 2
 class ClientTest(unittest.TestCase):
 
   def setUp(self):
-    self.incoming_port = str(get_unused_port())
+    self.incoming_port = get_unused_port()
     print "incoming port is", self.incoming_port
     self.publish_port = get_unused_port()
     print "publish port is", self.publish_port
 
-    self.master = subprocess.Popen(["cargo", "run", "--release", "--bin", "orchestra", "--", self.incoming_port, str(self.publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
-    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", self.incoming_port, str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid), range(numworkers))
+    self.master = subprocess.Popen(["cargo", "run", "--release", "--bin", "orchestra", "--", str(self.incoming_port), str(self.publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
+    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", str(self.incoming_port), str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid), range(numworkers))
 
   def testConnect(self):
     self.client_port = get_unused_port()
-    op.context.connect("tcp://127.0.0.1:" + str(self.incoming_port), "tcp://127.0.0.1:" + str(self.client_port), self.publish_port)
+    op.context.connect("127.0.0.1", self.incoming_port, self.publish_port, "127.0.0.1", self.client_port)
     op.context.debug_info()
 
     time.sleep(1.0) # todo(pcmoritz) fix this
