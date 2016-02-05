@@ -1,3 +1,4 @@
+#![feature(ip_addr)]
 #![feature(convert)]
 #![feature(custom_derive)]
 #![feature(deque_extras)]

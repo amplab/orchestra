@@ -21,7 +21,7 @@ RUN cd ~ && \
 	cd cprotobuf && \
 	python setup.py install
 RUN cd ~ && \
-	wget https://github.com/amplab/orchestra/releases/download/0.0/orchestra.zip && \
+	wget https://github.com/amplab/orchestra/releases/download/v0.002/orchestra.zip && \
 	unzip orchestra.zip -d orchestra && \
 	cd orchestra && \
 	cargo build
@@ -34,3 +34,4 @@ ENV LD_LIBRARY_PATH=/root/orchestra/target/debug/:${LD_LIBRARY_PATH}
 WORKDIR /root/orchestra
 CMD ["python", "scripts/worker.py", "7114", "4000", "7227"]
 EXPOSE 4000
+EXPOSE 2222
