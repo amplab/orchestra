@@ -8,6 +8,7 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::str::FromStr;
 use std::net::IpAddr;
 
 use protobuf::{Message, RepeatedField};
@@ -94,7 +95,8 @@ impl Context {
 
         let objects = Arc::new(Mutex::new(HashMap::new()));
 
-        Context::start_reply_thread(&mut zmq_ctx, &to_zmq_socket_addr(client_addr, client_port)[..], reply_sender.clone(), objects.clone());
+        let localhost = IpAddr::from_str("0.0.0.0").unwrap();
+        Context::start_reply_thread(&mut zmq_ctx, &to_zmq_socket_addr(&localhost, client_port)[..], reply_sender.clone(), objects.clone());
 
         thread::sleep_ms(10);
 
