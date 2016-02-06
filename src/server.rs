@@ -55,7 +55,7 @@ impl WorkerPool {
     thread::spawn(move || {
       let mut zmq_ctx = zmq::Context::new();
       let mut publisher = zmq_ctx.socket(zmq::PUB).unwrap();
-      let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+      let localhost = IpAddr::from_str("0.0.0.0").unwrap();
       bind_socket(&mut publisher, &localhost, Some(publish_port));
       loop {
         match publish_notify.recv().unwrap() {
@@ -218,7 +218,7 @@ impl<'a> Server<'a> {
   /// Start the server's main loop.
   pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u16) {
     let mut socket = self.zmq_ctx.socket(zmq::REP).ok().unwrap();
-    let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+    let localhost = IpAddr::from_str("0.0.0.0").unwrap();
     bind_socket(&mut socket, &localhost, Some(incoming_port));
     loop {
       self.process_request(&mut socket);
@@ -309,7 +309,7 @@ impl<'a> Server<'a> {
   /// Establish the setup port that will be used for setting up the client server connection
   fn bind_setup_socket(zmq_ctx: &mut zmq::Context) -> (Socket, u16) {
     let mut setup_socket = zmq_ctx.socket(zmq::REP).ok().unwrap();
-    let localhost = IpAddr::from_str("127.0.0.1").unwrap();
+    let localhost = IpAddr::from_str("0.0.0.0").unwrap();
     let port = bind_socket(&mut setup_socket, &localhost, None);
     return (setup_socket, port)
   }
