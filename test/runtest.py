@@ -1,4 +1,4 @@
-import subprocess, os, signal, time, socket, psutil
+import subprocess, os, signal, time, socket
 import unittest
 import orchpy as op
 from random import randint
