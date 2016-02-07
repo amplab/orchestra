@@ -17,6 +17,11 @@ import cprotobuf
 import orchpy.protos_pb as pb
 import numpy as np
 
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 include "utils.pxi"
 
 class TypeAlias(object):
@@ -87,7 +92,10 @@ cpdef serialize(bytearray buf, val):
     serialize(buf, len(data))
     buf.extend(data)
   else:
-    data = val.proto.SerializeToString()
+    if hasattr(val, 'proto') and hasattr(val.proto, 'SerializeToString'):
+        data = val.proto.SerializeToString()
+    else:
+        data = pickle.dumps(val)
     serialize(buf, len(data))
     buf.extend(data)
 
@@ -109,8 +117,11 @@ cdef object deserialize_primitive(char **buff, char *end, type t):
     size = deserialize_primitive(buff, end, int)
     data = PyBytes_FromStringAndSize(buff[0], size)
     buff[0] += size
-    result = t()
-    result.deserialize(data)
+    if hasattr(t, 'deserialize'):
+        result = t()
+        result.deserialize(data)
+    else:
+        result = pickle.loads(data)
     return result
 
 
