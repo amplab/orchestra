@@ -21,7 +21,7 @@ RUN cd ~ && \
 	cd cprotobuf && \
 	python setup.py install
 RUN cd ~ && \
-	wget https://github.com/amplab/orchestra/releases/download/v0.002/orchestra.zip && \
+	wget https://github.com/amplab/orchestra/releases/download/v0.1alpha/orchestra.zip && \
 	unzip orchestra.zip -d orchestra && \
 	cd orchestra && \
 	cargo build
