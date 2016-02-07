@@ -95,7 +95,7 @@ cpdef serialize(bytearray buf, val):
     if hasattr(val, 'proto') and hasattr(val.proto, 'SerializeToString'):
         data = val.proto.SerializeToString()
     else:
-        data = pickle.dumps(val)
+        data = pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
     serialize(buf, len(data))
     buf.extend(data)
 
