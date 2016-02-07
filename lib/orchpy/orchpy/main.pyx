@@ -31,7 +31,7 @@ cdef class ObjRef:
 cdef int get_id(ObjRef value):
   return value._id
 
-cdef inline str get_elements(bytearray buf, int start, int len):
+cdef inline bytes get_elements(bytearray buf, int start, int len):
   cdef char *buff = PyByteArray_AS_STRING(buf)
   return PyBytes_FromStringAndSize(buff + start, len)
 
@@ -177,7 +177,7 @@ def distributed(types, return_type):
                 elif types[-1] is None:
                   arguments.append(context.get_object(proto, types[-2]))
                 else:
-                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.func_name + ", which takes only " + str(len(types)) + " arguments.")
+                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.__name__ + ", which takes only " + str(len(types)) + " arguments.")
               else:
                 arguments.append(proto)
             buf = bytearray()
@@ -185,8 +185,8 @@ def distributed(types, return_type):
             return memoryview(buf).tobytes()
         # for remotely executing the function
         def func_call(*args):
-            return context.call(func.func_name, args)
-        func_call.name = func.func_name
+            return context.call(func_call.name, args)
+        func_call.name = func.__name__.encode()
         func_call.is_distributed = True
         func_call.executor = func_executor
         func_call.types = types
@@ -197,7 +197,7 @@ def register_current(globallist):
   for (name, val) in globallist:
     try:
       if val.is_distributed:
-        context.register(name, val.executor, *val.types)
+        context.register(name.encode(), val.executor, *val.types)
     except AttributeError:
       pass
 
@@ -207,6 +207,6 @@ def register_distributed(module):
         val = getattr(module, name)
         try:
             if val.is_distributed:
-                context.register(name, val.executor, *val.types)
+                context.register(name.encode(), val.executor, *val.types)
         except AttributeError:
             pass
