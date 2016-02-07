@@ -216,12 +216,12 @@ impl<'a> Server<'a> {
   }
 
   /// Start the server's main loop.
-  pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u16) {
+  pub fn main_loop<'b>(self: &'b mut Server<'a>, incoming_port: u16, setup_port: u16) {
     let mut socket = self.zmq_ctx.socket(zmq::REP).ok().unwrap();
     let localhost = IpAddr::from_str("0.0.0.0").unwrap();
     bind_socket(&mut socket, &localhost, Some(incoming_port));
     loop {
-      self.process_request(&mut socket);
+      self.process_request(&mut socket, setup_port);
     }
   }
 
@@ -315,7 +315,7 @@ impl<'a> Server<'a> {
   }
 
   /// Process request by client.
-  pub fn process_request<'b>(self: &'b mut Server<'a>, socket: &'b mut Socket) {
+  pub fn process_request<'b>(self: &'b mut Server<'a>, socket: &'b mut Socket, setup_port: u16) {
     let msg = receive_message(socket);
     match msg.get_field_type() {
       comm::MessageType::INVOKE => {

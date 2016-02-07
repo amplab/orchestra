@@ -32,5 +32,5 @@ ENV PYTHONPATH=/root/orchestra/lib:/root/orchestra/lib/orchpy/build/lib.linux-x8
 ENV LD_LIBRARY_PATH=/root/orchestra/target/debug/:${LD_LIBRARY_PATH}
 
 WORKDIR /root/orchestra
-CMD ["cargo", "run", "7114", "7227"]
-EXPOSE 7114 7227
+CMD ["cargo", "run", "7114", "7227", "7228"]
+EXPOSE 7114 7227 7228
