@@ -1,3 +1,4 @@
+# cython: language_level=3
 # unison: fast, space efficient and backward compatible python serialization
 #
 # This module exports:
@@ -99,14 +100,14 @@ cdef object deserialize_primitive(char **buff, char *end, type t):
     return decode_string(buff, end)
   if t == np.ndarray:
     size = deserialize_primitive(buff, end, int)
-    data = PyString_FromStringAndSize(buff[0], size)
+    data = PyBytes_FromStringAndSize(buff[0], size)
     buff[0] += size
     array = pb.Array()
     array.ParseFromString(data)
     return proto_to_array(array)
   else:
     size = deserialize_primitive(buff, end, int)
-    data = PyString_FromStringAndSize(buff[0], size)
+    data = PyBytes_FromStringAndSize(buff[0], size)
     buff[0] += size
     result = t()
     result.deserialize(data)

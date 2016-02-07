@@ -1,3 +1,4 @@
+# cython: language_level=3
 #cython.wraparound=False
 #cython.boundscheck=False
 cimport cython
@@ -6,7 +7,7 @@ from libc.stdint cimport uint16_t
 import array
 import cprotobuf
 import numpy as np
-import unison
+import orchpy.unison as unison
 import orchpy.protos_pb as pb
 import types
 
@@ -32,7 +33,7 @@ cdef int get_id(ObjRef value):
 
 cdef inline str get_elements(bytearray buf, int start, int len):
   cdef char *buff = PyByteArray_AS_STRING(buf)
-  return PyString_FromStringAndSize(buff + start, len)
+  return PyBytes_FromStringAndSize(buff + start, len)
 
 cpdef serialize_args(args):
   result = pb.Args()
