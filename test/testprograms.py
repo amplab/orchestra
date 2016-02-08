@@ -20,6 +20,10 @@ def testobjrefs():
 def zeros(shape):
   return np.zeros(shape)
 
+@op.distributed([np.ndarray], np.ndarray)
+def arrayid(array):
+  return array
+
 if __name__ == "__main__":
   args = parser.parse_args()
   op.context.connect("127.0.0.1", args.server_port, args.subscriber_port, "127.0.0.1", args.client_port)

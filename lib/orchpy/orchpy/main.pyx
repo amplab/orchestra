@@ -40,6 +40,38 @@ cdef inline bytes get_elements(bytearray buf, int start, int len):
   cdef char *buff = PyByteArray_AS_STRING(buf)
   return PyBytes_FromStringAndSize(buff + start, len)
 
+# this is a draft of the implementation, eventually we will use Python 3's typing
+# module and this backport:
+# https://github.com/python/typing/blob/master/python2/typing.py
+
+cpdef check_type(val, t):
+  if type(val) == ObjRef:
+    # at the moment, obj references can be of any type; think about making them typed
+    return
+  if type(val) == list:
+    for i, elem in enumerate(val):
+      try:
+        check_type(elem, t[1])
+      except:
+        raise Exception("Type error: Heterogeneous list " + str(val) + " at index " + str(i))
+    return
+  if type(val) == tuple:
+    for i, elem in enumerate(val):
+      try:
+        check_type(elem, t[1][i])
+      except:
+        raise Exception("Type error: Type " + str(val) + " at index " + str(i) + " does not match")
+    return
+  if (type(val) == int or type(val) == long) and (t == int or t == long):
+    return True
+  if type(val) != t:
+    raise Exception("Type of " + str(val) + " is not " + str(t))
+
+# eventually move this into unison
+cpdef check_types(vals, schema):
+  for i, val in enumerate(vals):
+    check_type(val, schema[i])
+
 cpdef serialize_args(args):
   result = pb.Args()
   cdef bytearray buf = bytearray()
@@ -198,8 +230,10 @@ def distributed(types, return_type):
             unison.serialize(buf, func(*arguments))
             return memoryview(buf).tobytes()
         # for remotely executing the function
-        def func_call(*args):
-            return context.call(func_call.name, args)
+        def func_call(*args, typecheck=False):
+          if typecheck:
+            check_types(args, func_call.types)
+          return context.call(func_call.name, args)
         func_call.name = func.__name__.encode()
         func_call.is_distributed = True
         func_call.executor = func_executor
