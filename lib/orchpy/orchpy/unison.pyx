@@ -15,6 +15,7 @@
 
 import cprotobuf
 import orchpy.protos_pb as pb
+import orchpy.main as main
 import numpy as np
 
 try:
@@ -91,6 +92,8 @@ cpdef serialize(bytearray buf, val):
     data = proto.SerializeToString()
     serialize(buf, len(data))
     buf.extend(data)
+  elif type(val) == main.ObjRef:
+    serialize(buf, val.get_id())
   else:
     if hasattr(val, 'proto') and hasattr(val.proto, 'SerializeToString'):
         data = val.proto.SerializeToString()
@@ -113,6 +116,8 @@ cdef object deserialize_primitive(char **buff, char *end, type t):
     array = pb.Array()
     array.ParseFromString(data)
     return proto_to_array(array)
+  if t == main.ObjRef:
+    return main.ObjRef(decode_uint64(buff, end))
   else:
     size = deserialize_primitive(buff, end, int)
     data = PyBytes_FromStringAndSize(buff[0], size)

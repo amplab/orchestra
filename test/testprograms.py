@@ -1,6 +1,6 @@
 import numpy as np
 import orchpy as op
-import unison
+import orchpy.unison as unison
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -8,7 +8,7 @@ parser.add_argument('server_port', type=int, help='the port to post requests to'
 parser.add_argument('client_port', type=int, help='the port to listen at')
 parser.add_argument('subscriber_port', type=int, help='the port used to set up the connections')
 
-@op.distributed([str, int, int], str)
+@op.distributed([unicode, op.ObjRef, int], unicode)
 def testfunction(a, b, c):
   return a
 
