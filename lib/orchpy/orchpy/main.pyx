@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 # cython: language_level=3
 #cython.wraparound=False
 #cython.boundscheck=False
@@ -10,6 +12,9 @@ import numpy as np
 import orchpy.unison as unison
 import orchpy.protos_pb as pb
 import types
+
+# see http://python-future.org/stdlib_incompatibilities.html
+from future.utils import bytes_to_native_str
 
 include "utils.pxi"
 
@@ -136,8 +141,9 @@ cdef class Context:
     return ObjRef(orchestra_call(self.context, name, args, len(args)))
 
   def map(self, func, arglist):
+    arraytype = bytes_to_native_str(b'L')
     args = serialize_args(arglist).SerializeToString()
-    cdef array.array result = array.array('L', len(arglist) * [0]) # TODO(pcmoritz) This might be slow
+    cdef array.array result = array.array(arraytype, len(arglist) * [0]) # TODO(pcmoritz) This might be slow
     orchestra_map(self.context, func.name, args, len(args), <size_t*>result.data.as_voidptr)
     retlist = []
     for elem in result:
