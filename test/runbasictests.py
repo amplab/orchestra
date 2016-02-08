@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import orchpy as op
-import unison
+import orchpy.unison as unison
 import subprocess, os, socket, signal
 from testprograms import zeros, testfunction, testobjrefs
 import time
