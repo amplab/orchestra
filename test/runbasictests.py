@@ -3,7 +3,7 @@ import numpy as np
 import orchpy as op
 import orchpy.unison as unison
 import subprocess, os, socket, signal
-from testprograms import zeros, testfunction, testobjrefs
+from testprograms import zeros, testfunction, testobjrefs, arrayid
 import time
 
 
@@ -40,6 +40,25 @@ class UnisonTest(unittest.TestCase):
     res = unison.deserialize(data, schema)
     self.assertTrue(l == res)
 
+class UnisonTest(unittest.TestCase):
+  def testTypeCheck(self):
+    l = 200 * [op.ObjRef(1)] + 50 * [1L] + 50 * [1.0] + 50 * [u"hi"]
+    t = 200 * [op.ObjRef] + 50 * [int] + 50 * [float] + 50 * [unicode]
+    op.check_types(l, t)
+    try:
+      l = [1, 2, 3, 4, "hi"]
+      t = unison.List[int]
+      op.check_types([l], [t])
+      self.assertFalse(True)
+    except:
+      self.assertTrue(True)
+    l = ("hello", "world")
+    t = unison.Tuple[str, str]
+    op.check_types([l], [t])
+    l = [[1, 2, 3], ([1, 2, 3], ("hello", "world")), np.array([1.0, 2.0, 3.0])]
+    t = [unison.List[int], unison.Tuple[unison.List[int], unison.Tuple[str, str]], np.ndarray]
+    op.check_types(l, t)
+
 class OrchestraTest(unittest.TestCase):
 
   def testArgs(self):
@@ -75,8 +94,10 @@ class ClientTest(unittest.TestCase):
 
     time.sleep(1.0) # todo(pcmoritz) fix this
 
-    zeros([100, 100])
+    res = zeros([100, 100])
     objrefs = testobjrefs()
+
+    arrayid(res)
 
     res = op.context.pull(op.ObjRefs, objrefs)
 
