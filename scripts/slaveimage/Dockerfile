@@ -5,6 +5,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bu
 RUN pip install numpy cython
 RUN pip install protobuf
 RUN pip install psutil
+RUN pip install IPython
 ENV RUST_VERSION=1.8.0
 RUN cd /tmp && \
 	curl -sO https://static.rust-lang.org/dist/rust-nightly-x86_64-unknown-linux-gnu.tar.gz   && \
