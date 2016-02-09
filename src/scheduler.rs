@@ -13,7 +13,7 @@ use protobuf::RepeatedField;
 pub enum Event {
   /// A worker becomes available for computation.
   Worker(WorkerID),
-  /// An object has been returned by a worker.
+  /// An object becomes available.
   Obj(ObjRef),
   /// A job is being scheduled.
   Job(comm::Call),

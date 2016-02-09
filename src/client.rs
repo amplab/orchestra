@@ -271,6 +271,16 @@ impl Context {
             }
         }
     }
+    pub fn push_remote_object<'b>(self: &'b mut Context) -> ObjRef {
+        let mut msg = comm::Message::new();
+        msg.set_field_type(comm::MessageType::PUSH);
+        msg.set_workerid(self.workerid as u64);
+        send_message(&mut self.request, &mut msg);
+        let answer = receive_message(&mut self.request);
+        let result = answer.get_call().get_result();
+        assert!(result.len() == 1);
+        return result[0];
+    }
     pub fn pull_debug_info<'b>(self: &'b mut Context) -> comm::Message {
         let mut msg = comm::Message::new();
         msg.set_field_type(comm::MessageType::DEBUG);

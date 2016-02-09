@@ -318,6 +318,19 @@ impl<'a> Server<'a> {
         // info!("add request {:?} {:?}, result {:?}", msg.get_call().get_field_type(), msg.get_call().get_name(), message.get_call().get_result());
         send_message(socket, &mut message);
       },
+      comm::MessageType::PUSH => {
+        let workerid = msg.get_workerid() as WorkerID;
+        let objref = self.register_new_object();
+        self.register_result(objref, workerid);
+        self.workerpool.scheduler_notify.send(scheduler::Event::Obj(objref)).unwrap();
+
+        let mut call = comm::Call::new();
+        call.set_result(vec!(objref));
+        let mut message = comm::Message::new();
+        message.set_field_type(comm::MessageType::DONE); // this is never used
+        message.set_call(call); // this is not really a call, just used to store the objref
+        send_message(socket, &mut message);
+      },
       comm::MessageType::REGISTER_CLIENT => {
         let workerid = self.workerpool.len();
         let (mut setup_socket, setup_port) = Server::bind_setup_socket(&mut self.zmq_ctx);

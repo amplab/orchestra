@@ -85,6 +85,7 @@ cdef extern void orchestra_store_result(void* context, size_t objref, char* data
 cdef extern size_t orchestra_get_obj_len(void* Context, size_t objref)
 cdef extern char* orchestra_get_obj_ptr(void* context, size_t objref)
 cdef extern size_t orchestra_pull(void* context, size_t objref)
+cdef extern size_t orchestra_push(void* context)
 cdef extern void orchestra_debug_info(void* context)
 cdef extern void orchestra_destroy_context(void* context)
 
@@ -151,6 +152,13 @@ cdef class Context:
   def pull(self, type, objref):
     objref = orchestra_pull(self.context, objref.get_id())
     return self.get_object(ObjRef(objref), type)
+
+  def push(self, obj):
+    buf = bytearray()
+    unison.serialize(buf, obj)
+    objref = orchestra_push(self.context)
+    orchestra_store_result(self.context, objref, buf, len(buf))
+    return objref
 
   # This will eventually be moved into the tensor library
   def assemble(self, objref):
