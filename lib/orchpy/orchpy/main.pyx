@@ -183,8 +183,8 @@ cdef class Context:
     return retlist
 
   """Register a function that can be called remotely."""
-  def register(self, name, function, *args):
-    fnid = orchestra_register_function(self.context, name)
+  def register(self, func_name, module_name, function, *args):
+    fnid = orchestra_register_function(self.context, module_name + "." + func_name)
     assert(fnid == len(self.functions))
     self.functions.append(function)
     self.arg_types.append(args)
@@ -199,12 +199,6 @@ cdef class Context:
     objref = orchestra_push(self.context)
     orchestra_store_result(self.context, objref, buf, len(buf))
     return objref
-
-  # This will eventually be moved into the tensor library
-  def assemble(self, objref):
-        """Assemble an array on this node from a distributed array object reference."""
-        dist_array = self.pull(np.ndarray, objref)
-        return np.vstack([np.hstack([self.pull(np.ndarray, ObjRef(objref)) for objref in row]) for row in dist_array])
 
 context = Context()
 
@@ -227,7 +221,10 @@ def distributed(types, return_type):
               else:
                 arguments.append(proto)
             buf = bytearray()
-            unison.serialize(buf, func(*arguments))
+            result = func(*arguments)
+            if unison.unison_type(result) != return_type:
+              raise Exception("Return type of " + func.func_name + " does not match the return type specified in the @distributed decorator, was expecting " + str(return_type) + " but received " + str(unison.unison_type(result)))
+            unison.serialize(buf, result)
             return memoryview(buf).tobytes()
         # for remotely executing the function
         def func_call(*args, typecheck=False):
@@ -241,11 +238,11 @@ def distributed(types, return_type):
         return func_call
     return distributed_decorator
 
-def register_current(globallist):
-  for (name, val) in globallist:
+def register_current():
+  for (name, val) in globals().items():
     try:
       if val.is_distributed:
-        context.register(name.encode(), val.executor, *val.types)
+        context.register(name.encode(), __name__, val.executor, *val.types)
     except AttributeError:
       pass
 
@@ -255,6 +252,6 @@ def register_distributed(module):
         val = getattr(module, name)
         try:
             if val.is_distributed:
-                context.register(name.encode(), val.executor, *val.types)
+                context.register(name.encode(), module.__name__, val.executor, *val.types)
         except AttributeError:
             pass

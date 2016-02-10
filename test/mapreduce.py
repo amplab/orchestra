@@ -30,5 +30,5 @@ def plusone(matrix):
 if __name__ == "__main__":
     args = parser.parse_args()
     op.context.connect("127.0.0.1", args.server_port, args.subscriber_port, "127.0.0.1", args.client_port)
-    op.register_current(globals().items())
+    op.register_current()
     op.context.main_loop()

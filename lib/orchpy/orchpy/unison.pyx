@@ -34,6 +34,19 @@ class TypeAlias(object):
   def __getitem__(self, typeargs):
     return (self.target_type, typeargs)
 
+cpdef unison_type(obj):
+  """
+  Returns the unison type of obj. For example,
+    unison_type([0, 1]) == (list, (int, int))
+  whereas,
+    type([0, 1]) == list
+  """
+  if type(obj) == list:
+    return (list, tuple([unison_type(e) for e in obj]))
+  if type(obj) == tuple:
+    return (tuple, tuple([unison_type(e) for e in obj]))
+  return type(obj)
+
 List = TypeAlias(list)
 # Dict = TypeAlias(dict)
 # Set = TypeAlias(set)
