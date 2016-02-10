@@ -183,8 +183,8 @@ cdef class Context:
     return retlist
 
   """Register a function that can be called remotely."""
-  def register(self, name, function, *args):
-    fnid = orchestra_register_function(self.context, name)
+  def register(self, func_name, module_name, function, *args):
+    fnid = orchestra_register_function(self.context, module_name + "." + func_name)
     assert(fnid == len(self.functions))
     self.functions.append(function)
     self.arg_types.append(args)
@@ -238,11 +238,11 @@ def distributed(types, return_type):
         return func_call
     return distributed_decorator
 
-def register_current(globallist):
-  for (name, val) in globallist:
+def register_current():
+  for (name, val) in globals().items():
     try:
       if val.is_distributed:
-        context.register(name.encode(), val.executor, *val.types)
+        context.register(name.encode(), __name__, val.executor, *val.types)
     except AttributeError:
       pass
 
@@ -252,6 +252,6 @@ def register_distributed(module):
         val = getattr(module, name)
         try:
             if val.is_distributed:
-                context.register(name.encode(), val.executor, *val.types)
+                context.register(name.encode(), module.__name__, val.executor, *val.types)
         except AttributeError:
             pass
