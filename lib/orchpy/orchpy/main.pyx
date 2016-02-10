@@ -200,12 +200,6 @@ cdef class Context:
     orchestra_store_result(self.context, objref, buf, len(buf))
     return objref
 
-  # This will eventually be moved into the tensor library
-  def assemble(self, objref):
-        """Assemble an array on this node from a distributed array object reference."""
-        dist_array = self.pull(np.ndarray, objref)
-        return np.vstack([np.hstack([self.pull(np.ndarray, ObjRef(objref)) for objref in row]) for row in dist_array])
-
 context = Context()
 
 def distributed(types, return_type):
@@ -227,7 +221,10 @@ def distributed(types, return_type):
               else:
                 arguments.append(proto)
             buf = bytearray()
-            unison.serialize(buf, func(*arguments))
+            result = func(*arguments)
+            if unison.unison_type(result) != return_type:
+              raise Exception("Return type of " + func.func_name + " does not match the return type specified in the @distributed decorator, was expecting " + str(return_type) + " but received " + str(unison.unison_type(result)))
+            unison.serialize(buf, result)
             return memoryview(buf).tobytes()
         # for remotely executing the function
         def func_call(*args, typecheck=False):
