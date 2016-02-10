@@ -1,0 +1,33 @@
+{
+  "apiVersion": "v1",
+  "kind": "ReplicationController",
+  "metadata": {
+    "name": "orchestra-master",
+    "labels": {
+      "app": "orchestra",
+      "role": "master"
+    }
+  },
+  "spec": {
+    "replicas": 1,
+    "selector":{
+      "app": "orchestra",
+      "role": "master"
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "orchestra",
+          "role": "master"
+        }
+      },
+      "spec": {
+        "containers": [{
+          "name": "orchestra-master",
+          "image": "pcmoritz/orchestra:pre",
+          "ports": [{"containerPort": 7114}, {"containerPort": 7227}]
+        }]
+      }
+    }
+  }
+}

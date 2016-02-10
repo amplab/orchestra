@@ -1,0 +1,25 @@
+{
+   "kind":"Service",
+   "apiVersion":"v1",
+   "metadata":{
+      "name":"orchestra-slaves",
+      "labels":{
+         "app":"orchestra",
+         "role":"slave"
+      }
+   },
+   "spec":{
+      "clusterIP": "None",
+      "ports": [
+        {
+          "name": "reply",
+          "port": 4000,
+          "targetPort": "orch-slave"
+        }
+      ],
+      "selector":{
+         "app":"orchestra",
+         "role":"slave"
+      }
+   }
+}

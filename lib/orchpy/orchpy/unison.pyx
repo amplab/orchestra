@@ -1,3 +1,4 @@
+# cython: language_level=3
 # unison: fast, space efficient and backward compatible python serialization
 #
 # This module exports:
@@ -14,7 +15,13 @@
 
 import cprotobuf
 import orchpy.protos_pb as pb
+import orchpy.main as main
 import numpy as np
+
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 include "utils.pxi"
 
@@ -85,8 +92,13 @@ cpdef serialize(bytearray buf, val):
     data = proto.SerializeToString()
     serialize(buf, len(data))
     buf.extend(data)
+  elif type(val) == main.ObjRef:
+    serialize(buf, val.get_id())
   else:
-    data = val.proto.SerializeToString()
+    if hasattr(val, 'proto') and hasattr(val.proto, 'SerializeToString'):
+        data = val.proto.SerializeToString()
+    else:
+        data = pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
     serialize(buf, len(data))
     buf.extend(data)
 
@@ -99,17 +111,22 @@ cdef object deserialize_primitive(char **buff, char *end, type t):
     return decode_string(buff, end)
   if t == np.ndarray:
     size = deserialize_primitive(buff, end, int)
-    data = PyString_FromStringAndSize(buff[0], size)
+    data = PyBytes_FromStringAndSize(buff[0], size)
     buff[0] += size
     array = pb.Array()
     array.ParseFromString(data)
     return proto_to_array(array)
+  if t == main.ObjRef:
+    return main.ObjRef(decode_uint64(buff, end))
   else:
     size = deserialize_primitive(buff, end, int)
-    data = PyString_FromStringAndSize(buff[0], size)
+    data = PyBytes_FromStringAndSize(buff[0], size)
     buff[0] += size
-    result = t()
-    result.deserialize(data)
+    if hasattr(t, 'deserialize'):
+        result = t()
+        result.deserialize(data)
+    else:
+        result = pickle.loads(data)
     return result
 
 

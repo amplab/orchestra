@@ -1,6 +1,7 @@
 // This file is supposed to shield all the unsafe functionality from the rest of the program
 #![crate_type = "dylib"]
 
+#![feature(ip_addr)]
 #![feature(convert)]
 #![feature(box_syntax)]
 #[macro_use]
@@ -22,6 +23,8 @@ use client::{Context};
 use std::ffi::CStr;
 use std::mem::transmute;
 use std::str;
+use std::str::FromStr;
+use std::net::IpAddr;
 use protobuf::{CodedInputStream, Message};
 
 fn string_from_c(string: *const c_char) -> String {
@@ -37,16 +40,18 @@ pub struct Slice {
 }
 
 #[no_mangle]
-pub extern "C" fn orchestra_create_context(server_addr: *const c_char, client_addr: *const c_char, subscriber_port: u64) -> *mut Context {
-    let server_addr = string_from_c(server_addr);
-    let client_addr = string_from_c(client_addr);
+pub extern "C" fn orchestra_create_context(server_addr: *const c_char, reply_port: u16, publish_port: u16, client_addr: *const c_char, client_port: u16) -> *mut Context {
+    let server_string = string_from_c(server_addr);
+    let server_addr = IpAddr::from_str(&server_string).unwrap(); // TODO: Proper error handling
+    let client_string = string_from_c(client_addr);
+    let client_addr = IpAddr::from_str(&client_string).unwrap(); // TODO: Proper error handling
 
     match env_logger::init() {
         Ok(()) => {},
         SetLoggerError => {} // logging framework already initialized
     }
 
-    let res = unsafe { transmute(box Context::new(server_addr, client_addr, subscriber_port)) };
+    let res = unsafe { transmute(box Context::new(&server_addr, reply_port, publish_port, &client_addr, client_port)) };
     return res;
 }
 

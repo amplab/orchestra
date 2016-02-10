@@ -3,11 +3,13 @@ use zmq;
 use zmq::{Socket};
 
 use comm;
-use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket};
+use utils::{ObjRef, WorkerID, receive_message, send_message, receive_subscription, send_ack, receive_ack, connect_socket, to_zmq_socket_addr};
 use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::str::FromStr;
+use std::net::IpAddr;
 
 use protobuf::{Message, RepeatedField};
 
@@ -78,22 +80,23 @@ impl Context {
             }
         });
     }
-    pub fn new(server_addr: String, client_addr: String, publish_port: u64) -> Context {
+    pub fn new(server_addr: &IpAddr, reply_port: u16, publish_port: u16, client_addr: &IpAddr, client_port: u16) -> Context {
         let mut zmq_ctx = zmq::Context::new();
 
         let mut request = zmq_ctx.socket(zmq::REQ).unwrap();
-        request.connect(&server_addr[..]).unwrap();
+        request.connect(&to_zmq_socket_addr(server_addr, reply_port)[..]).unwrap();
 
         let (reply_sender, reply_receiver) = mpsc::channel(); // TODO: rename this
 
         info!("connecting to server...");
         let mut reg = comm::Message::new();
         reg.set_field_type(comm::MessageType::REGISTER_CLIENT);
-        reg.set_address(client_addr.clone());
+        reg.set_address(to_zmq_socket_addr(client_addr, client_port));
 
         let objects = Arc::new(Mutex::new(HashMap::new()));
 
-        Context::start_reply_thread(&mut zmq_ctx, &client_addr[..], reply_sender.clone(), objects.clone());
+        let localhost = IpAddr::from_str("0.0.0.0").unwrap();
+        Context::start_reply_thread(&mut zmq_ctx, &to_zmq_socket_addr(&localhost, client_port)[..], reply_sender.clone(), objects.clone());
 
         thread::sleep_ms(10);
 
@@ -101,7 +104,7 @@ impl Context {
         let ack = receive_message(&mut request);
         let workerid = ack.get_workerid() as WorkerID;
         info!("my workerid is {}", workerid);
-        let setup_port = ack.get_setup_port();
+        let setup_port = ack.get_setup_port() as u16;
         info!("setup port is {}", setup_port);
 
         // the network thread listens to commands on the master subscription channel and serves the other client channels with data. It notifies the main thread if new data becomes available.
@@ -113,10 +116,11 @@ impl Context {
         let mut clients: HashMap<String, Socket> = HashMap::new(); // other clients that are part of the cluster
 
         let thread_objects = objects.clone();
+        let server_addr = server_addr.clone();
 
         thread::spawn(move || {
             let mut zmq_ctx = zmq::Context::new();
-            let mut subscriber = Context::connect_network_thread(&mut zmq_ctx, workerid, setup_port, publish_port);
+            let mut subscriber = Context::connect_network_thread(&mut zmq_ctx, workerid, &server_addr, setup_port, publish_port);
 
             loop {
                 let msg = receive_subscription(&mut subscriber);
@@ -164,14 +168,14 @@ impl Context {
         }
     }
 
-    fn connect_network_thread(zmq_ctx: &mut zmq::Context, workerid: WorkerID, setup_port: u64, subscriber_port: u64) -> Socket {
+    fn connect_network_thread(zmq_ctx: &mut zmq::Context, workerid: WorkerID, server_addr: &IpAddr, setup_port: u16, subscriber_port: u16) -> Socket {
         let mut subscriber = zmq_ctx.socket(zmq::SUB).unwrap();
         info!("subscriber_port {}", subscriber_port);
-        connect_socket(&mut subscriber, "localhost", subscriber_port);
+        connect_socket(&mut subscriber, server_addr, subscriber_port);
         subscriber.set_subscribe(format!("{:0>#07}", workerid).as_bytes()).unwrap();
 
         let mut setup = zmq_ctx.socket(zmq::REQ).unwrap();
-        connect_socket(&mut setup, "localhost", setup_port);
+        connect_socket(&mut setup, server_addr, setup_port);
         info!("setup_port {}", setup_port);
         thread::sleep_ms(10);
         // set up sub/pub socket

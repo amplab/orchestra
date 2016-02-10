@@ -21,7 +21,7 @@ RUN cd ~ && \
 	cd cprotobuf && \
 	python setup.py install
 RUN cd ~ && \
-	wget https://github.com/amplab/orchestra/releases/download/0.0/orchestra.zip && \
+	wget https://github.com/amplab/orchestra/releases/download/v0.1alpha/orchestra.zip && \
 	unzip orchestra.zip -d orchestra && \
 	cd orchestra && \
 	cargo build
@@ -32,4 +32,5 @@ ENV PYTHONPATH=/root/orchestra/lib:/root/orchestra/lib/orchpy/build/lib.linux-x8
 ENV LD_LIBRARY_PATH=/root/orchestra/target/debug/:${LD_LIBRARY_PATH}
 
 WORKDIR /root/orchestra
-CMD ["cargo", "run"]
+CMD ["cargo", "run", "7114", "7227", "7228"]
+EXPOSE 7114 7227 7228

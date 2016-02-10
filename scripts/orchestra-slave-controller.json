@@ -1,0 +1,52 @@
+{
+   "kind":"ReplicationController",
+   "apiVersion":"v1",
+   "metadata":{
+      "name":"orchestra-slave",
+      "labels":{
+         "app":"orchestra",
+         "role":"slave"
+      }
+   },
+   "spec":{
+      "replicas":4,
+      "selector":{
+         "app":"orchestra",
+         "role":"slave"
+      },
+      "template":{
+         "metadata":{
+            "labels":{
+               "app":"orchestra",
+               "role":"slave"
+            }
+         },
+         "spec":{
+            "containers":[
+               {
+                  "name":"orchestra-slave",
+                  "image":"pcmoritz/orchestra-slave:pre",
+                  "ports":[
+                     {
+                        "name":"orch-slave",
+                        "containerPort":4000
+                     },
+                     {
+                       "name":"orch-shell",
+                       "containerPort":2222
+                     }
+                  ],
+                     "env": [{
+                       "name": "SLAVE_IP",
+                       "valueFrom": {
+                         "fieldRef": {
+                           "fieldPath": "status.podIP"
+                         }
+                      }
+                   }]
+               }
+            ]
+         }
+      }
+   }
+}

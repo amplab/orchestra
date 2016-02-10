@@ -1,13 +1,20 @@
+from __future__ import unicode_literals
+
+# cython: language_level=3
 #cython.wraparound=False
 #cython.boundscheck=False
 cimport cython
 from cpython cimport array
+from libc.stdint cimport uint16_t
 import array
 import cprotobuf
 import numpy as np
-import unison
+import orchpy.unison as unison
 import orchpy.protos_pb as pb
 import types
+
+# see http://python-future.org/stdlib_incompatibilities.html
+from future.utils import bytes_to_native_str
 
 include "utils.pxi"
 
@@ -29,9 +36,41 @@ cdef class ObjRef:
 cdef int get_id(ObjRef value):
   return value._id
 
-cdef inline str get_elements(bytearray buf, int start, int len):
+cdef inline bytes get_elements(bytearray buf, int start, int len):
   cdef char *buff = PyByteArray_AS_STRING(buf)
-  return PyString_FromStringAndSize(buff + start, len)
+  return PyBytes_FromStringAndSize(buff + start, len)
+
+# this is a draft of the implementation, eventually we will use Python 3's typing
+# module and this backport:
+# https://github.com/python/typing/blob/master/python2/typing.py
+
+cpdef check_type(val, t):
+  if type(val) == ObjRef:
+    # at the moment, obj references can be of any type; think about making them typed
+    return
+  if type(val) == list:
+    for i, elem in enumerate(val):
+      try:
+        check_type(elem, t[1])
+      except:
+        raise Exception("Type error: Heterogeneous list " + str(val) + " at index " + str(i))
+    return
+  if type(val) == tuple:
+    for i, elem in enumerate(val):
+      try:
+        check_type(elem, t[1][i])
+      except:
+        raise Exception("Type error: Type " + str(val) + " at index " + str(i) + " does not match")
+    return
+  if (type(val) == int or type(val) == long) and (t == int or t == long):
+    return True
+  if type(val) != t:
+    raise Exception("Type of " + str(val) + " is not " + str(t))
+
+# eventually move this into unison
+cpdef check_types(vals, schema):
+  for i, val in enumerate(vals):
+    check_type(val, schema[i])
 
 cpdef serialize_args(args):
   result = pb.Args()
@@ -74,7 +113,7 @@ cdef struct Slice:
   size_t size
   char* ptr
 
-cdef extern void* orchestra_create_context(const char* server_addr, const char* client_addr, long subscriber_port)
+cdef extern void* orchestra_create_context(const char* server_addr, uint16_t reply_port, uint16_t publish_port, const char* client_addr, uint16_t client_port)
 cdef extern size_t orchestra_register_function(void* context, const char* name)
 cdef extern size_t orchestra_step(void* context)
 cdef extern Slice orchestra_get_args(void* context)
@@ -99,8 +138,8 @@ cdef class Context:
     self.functions = []
     self.arg_types = []
 
-  def connect(self, server_addr, client_addr, subscriber_port):
-    self.context = orchestra_create_context(server_addr, client_addr, subscriber_port)
+  def connect(self, server_addr, reply_port, publish_port, client_addr, client_port):
+    self.context = orchestra_create_context(server_addr, reply_port, publish_port, client_addr, client_port)
 
   def close(self):
     orchestra_destroy_context(self.context)
@@ -134,8 +173,9 @@ cdef class Context:
     return ObjRef(orchestra_call(self.context, name, args, len(args)))
 
   def map(self, func, arglist):
+    arraytype = bytes_to_native_str(b'L')
     args = serialize_args(arglist).SerializeToString()
-    cdef array.array result = array.array('L', len(arglist) * [0]) # TODO(pcmoritz) This might be slow
+    cdef array.array result = array.array(arraytype, len(arglist) * [0]) # TODO(pcmoritz) This might be slow
     orchestra_map(self.context, func.name, args, len(args), <size_t*>result.data.as_voidptr)
     retlist = []
     for elem in result:
@@ -183,16 +223,18 @@ def distributed(types, return_type):
                 elif types[-1] is None:
                   arguments.append(context.get_object(proto, types[-2]))
                 else:
-                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.func_name + ", which takes only " + str(len(types)) + " arguments.")
+                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.__name__ + ", which takes only " + str(len(types)) + " arguments.")
               else:
                 arguments.append(proto)
             buf = bytearray()
             unison.serialize(buf, func(*arguments))
             return memoryview(buf).tobytes()
         # for remotely executing the function
-        def func_call(*args):
-            return context.call(func.func_name, args)
-        func_call.name = func.func_name
+        def func_call(*args, typecheck=False):
+          if typecheck:
+            check_types(args, func_call.types)
+          return context.call(func_call.name, args)
+        func_call.name = func.__name__.encode()
         func_call.is_distributed = True
         func_call.executor = func_executor
         func_call.types = types
@@ -203,7 +245,7 @@ def register_current(globallist):
   for (name, val) in globallist:
     try:
       if val.is_distributed:
-        context.register(name, val.executor, *val.types)
+        context.register(name.encode(), val.executor, *val.types)
     except AttributeError:
       pass
 
@@ -213,6 +255,6 @@ def register_distributed(module):
         val = getattr(module, name)
         try:
             if val.is_distributed:
-                context.register(name, val.executor, *val.types)
+                context.register(name.encode(), val.executor, *val.types)
         except AttributeError:
             pass

@@ -1,9 +1,9 @@
 import unittest
 import numpy as np
 import orchpy as op
-import unison
+import orchpy.unison as unison
 import subprocess, os, socket, signal
-from testprograms import zeros, testfunction, testobjrefs
+from testprograms import zeros, testfunction, testobjrefs, arrayid
 import time
 
 
@@ -40,6 +40,25 @@ class UnisonTest(unittest.TestCase):
     res = unison.deserialize(data, schema)
     self.assertTrue(l == res)
 
+class UnisonTest(unittest.TestCase):
+  def testTypeCheck(self):
+    l = 200 * [op.ObjRef(1)] + 50 * [1L] + 50 * [1.0] + 50 * [u"hi"]
+    t = 200 * [op.ObjRef] + 50 * [int] + 50 * [float] + 50 * [unicode]
+    op.check_types(l, t)
+    try:
+      l = [1, 2, 3, 4, "hi"]
+      t = unison.List[int]
+      op.check_types([l], [t])
+      self.assertFalse(True)
+    except:
+      self.assertTrue(True)
+    l = ("hello", "world")
+    t = unison.Tuple[str, str]
+    op.check_types([l], [t])
+    l = [[1, 2, 3], ([1, 2, 3], ("hello", "world")), np.array([1.0, 2.0, 3.0])]
+    t = [unison.List[int], unison.Tuple[unison.List[int], unison.Tuple[str, str]], np.ndarray]
+    op.check_types(l, t)
+
 class OrchestraTest(unittest.TestCase):
 
   def testArgs(self):
@@ -60,23 +79,25 @@ numworkers = 2
 class ClientTest(unittest.TestCase):
 
   def setUp(self):
-    self.incoming_port = str(get_unused_port())
+    self.incoming_port = get_unused_port()
     print "incoming port is", self.incoming_port
     self.publish_port = get_unused_port()
     print "publish port is", self.publish_port
 
-    self.master = subprocess.Popen(["cargo", "run", "--release", "--bin", "orchestra", "--", self.incoming_port, str(self.publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
-    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", self.incoming_port, str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid), range(numworkers))
+    self.master = subprocess.Popen(["cargo", "run", "--release", "--bin", "orchestra", "--", str(self.incoming_port), str(self.publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
+    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", str(self.incoming_port), str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid), range(numworkers))
 
   def testConnect(self):
     self.client_port = get_unused_port()
-    op.context.connect("tcp://127.0.0.1:" + str(self.incoming_port), "tcp://127.0.0.1:" + str(self.client_port), self.publish_port)
+    op.context.connect("127.0.0.1", self.incoming_port, self.publish_port, "127.0.0.1", self.client_port)
     op.context.debug_info()
 
     time.sleep(1.0) # todo(pcmoritz) fix this
 
-    zeros([100, 100])
+    res = zeros([100, 100])
     objrefs = testobjrefs()
+
+    arrayid(res)
 
     res = op.context.pull(op.ObjRefs, objrefs)
 

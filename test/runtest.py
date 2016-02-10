@@ -1,4 +1,4 @@
-import subprocess, os, signal, time, socket, psutil
+import subprocess, os, signal, time, socket
 import unittest
 import orchpy as op
 from random import randint
@@ -16,15 +16,15 @@ numworkers = 5
 class OrchestraTest(unittest.TestCase):
 
     def setUp(self):
-        incoming_port = str(get_unused_port())
+        incoming_port = get_unused_port()
         print "incoming port is", incoming_port
-        publish_port = str(get_unused_port())
+        publish_port = get_unused_port()
         print "publish port is", publish_port
 
-        self.master = subprocess.Popen(["cargo", "run", "--bin", "orchestra", "--", incoming_port, publish_port], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
-        self.workers = map(lambda worker: subprocess.Popen(["python", "mapreduce.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
-        self.workers = map(lambda worker: subprocess.Popen(["python", "matmul.py", incoming_port, str(get_unused_port()), publish_port], preexec_fn=os.setsid), range(numworkers))
-        op.context.connect("tcp://127.0.0.1:" + incoming_port, "tcp://127.0.0.1:" + str(get_unused_port()), int(publish_port))
+        self.master = subprocess.Popen(["cargo", "run", "--bin", "orchestra", "--", str(incoming_port), str(publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
+        self.workers = map(lambda worker: subprocess.Popen(["python", "mapreduce.py", str(incoming_port), str(get_unused_port()), str(publish_port)], preexec_fn=os.setsid), range(numworkers))
+        self.workers = map(lambda worker: subprocess.Popen(["python", "matmul.py", str(incoming_port), str(get_unused_port()), str(publish_port)], preexec_fn=os.setsid), range(numworkers))
+        op.context.connect("127.0.0.1", incoming_port, publish_port, "127.0.0.1", get_unused_port())
 
     def tearDown(self):
         os.killpg(self.master.pid, signal.SIGTERM)
