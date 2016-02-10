@@ -133,6 +133,11 @@ pub extern "C" fn orchestra_pull(context: *mut Context, objref: size_t) -> size_
 }
 
 #[no_mangle]
+pub extern "C" fn orchestra_push(context: *mut Context) -> size_t {
+    unsafe { return (*context).push_remote_object(); }
+}
+
+#[no_mangle]
 pub extern "C" fn orchestra_debug_info(context: *mut Context) {
     unsafe {
         let msg = (*context).pull_debug_info();
