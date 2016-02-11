@@ -71,6 +71,16 @@ def dist_zeros(shape, block_size, dtype):
         dist_array.blocks[index] = single.single_zeros(dist_array.compute_block_size(index))
     return dist_array
 
+def dist_eye(dim, block_size, dtype):
+    # TODO(rkn): this code is pretty ugly, please clean it up
+    assert len(block_size) == 2 # this should probably be a "raise" not an "assert"
+    dist_array = dist_zeros([dim, dim], block_size, dtype)
+    num_blocks = dist_array.num_blocks[0]
+    for i in range(num_blocks - 1):
+        dist_array.blocks[i, i] = single.single_eye(block_size[0])
+    dist_array.blocks[num_blocks - 1, num_blocks - 1] = single.single_eye(dim - block_size[0] * (num_blocks - 1))
+    return dist_array
+
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
 def dist_random_normal(shape, block_size):
     dist_array = DistArray("float", shape, block_size)
@@ -171,6 +181,7 @@ def dist_tsqr(a):
             q_block_current = single.single_dot(q_block_current, single.single_subarray(q_tree[ith_index, j], lower, upper))
         q_result.blocks[i] = q_block_current
     r = op.context.pull(np.ndarray, current_rs[0])
+    assert r.shape == (min(a.shape[0], a.shape[1]), a.shape[1])
     return q_result, r
 
 def dist_tsqr_hr(a):
@@ -194,6 +205,7 @@ def dist_array_from_blocks(blocks, block_size):
     for i in range(len(blocks.shape)):
         index = [0] * dims
         index[i] = -1
+        index = tuple(index)
         remainder = op.context.pull(np.ndarray, blocks[index]).shape[i]
         shape.append(block_size[i] * (num_blocks[i] - 1) + remainder)
     dist_array = DistArray("float", shape, block_size)
@@ -208,36 +220,47 @@ def dist_qr(a):
 
     # we will store our scratch work in a_work
     a_work = DistArray(a.dtype, a.shape, a.block_size)
-    for index in np.ndindex(*a.blocks.shape):
+    for index in np.ndindex(*a.num_blocks):
         a_work.blocks[index] = a.blocks[index]
 
-    r_res = DistArray(a.dtype, [k, n], a.block_size)
+    r_res = dist_zeros([k, n], a.block_size, a.dtype)
     y_res = dist_zeros([m, k], a.block_size, a.dtype)
     Ts = []
 
-    for i in range(a.num_blocks[1]):
+    for i in range(min(a.num_blocks[0], a.num_blocks[1])): # this differs from the paper, which says "for i in range(a.num_blocks[1])", but that doesn't seem to make any sense when a.num_blocks[1] > a.num_blocks[0]
         b = min(a.block_size[1], a.shape[1] - a.block_size[1] * i)
-        column_dist_array = DistArray(a_work.dtype, [m, b])
-        y, t, _, R = dist_tsqr_hr(dist_array_from_blocks(a_work.blocks[i:, i]))
+        column_dist_array = DistArray(a_work.dtype, [m, b], a.block_size)
+        y, t, _, R = dist_tsqr_hr(dist_array_from_blocks(a_work.blocks[i:, i:(i + 1)], a.block_size))
 
-        for j in range(a.num_blocks[0]):
-            y_res[j, i] = op.context.push(y[(j * a.block_size[0]):((j + 1) * a.block_size[0]), :]) # eventually this should go away
-        r_res.blocks[i, i] = op.context.push(R)
+        # print "WWW: y.shape = " + str(y.shape)
+        for j in range(i, a.num_blocks[0]):
+            y_res.blocks[j, i] = op.context.push(y[((j - i) * a.block_size[0]):((j - i + 1) * a.block_size[0]), :]) # eventually this should go away
+        if a.shape[0] > a.shape[1]:
+            # in this case, R needs to be square
+            r_res.blocks[i, i] = op.context.push(np.vstack([R, np.zeros((R.shape[1] - R.shape[0], R.shape[1]))]))
+        else:
+            r_res.blocks[i, i] = op.context.push(R)
         Ts.append(t)
-        Ys.append(y)
 
-        for c in range(i, a.num_blocks[1]):
+        for c in range(i + 1, a.num_blocks[1]):
             W_rcs = []
             for r in range(i, a.num_blocks[0]):
-                y_ri = y[((r - i) * b):(r * b), :]
-                W_rcs.append(np.dot(y_ri.T, a_work.blocks[r, c]))
+                y_ri = y[((r - i) * a.block_size[0]):((r - i + 1) * a.block_size[0]), :]
+                W_rcs.append(np.dot(y_ri.T, op.context.pull(np.ndarray, a_work.blocks[r, c]))) # eventually the pull should go away
             W_c = np.sum(W_rcs, axis=0)
             for r in range(i, a.num_blocks[0]):
-                y_ri = y[((r - i) * b):(r * b), :]
+                y_ri = y[((r - i) * a.block_size[0]):((r - i + 1) * a.block_size[0]), :]
+                # import IPython
+                # IPython.embed()
                 A_rc = op.context.pull(np.ndarray, a_work.blocks[r, c]) - np.dot(y_ri, np.dot(t.T, W_c))
                 a_work.blocks[r, c] = op.context.push(A_rc)
             r_res.blocks[i, c] = a_work.blocks[i, c]
 
-    q_res = DistArray(a.dtype, [m, k], a.block_size)
+    q_res = dist_eye(a.shape[0], a.block_size, "float")
     # construct q_res from Ys and Ts
-    return Q, r_res
+    #TODO(construct q_res from Ys and Ts)
+    # for i in range(a.num_blocks[1]):
+
+    #return q_res, r_res
+
+    return Ts, y_res, r_res

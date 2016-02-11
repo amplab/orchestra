@@ -63,26 +63,62 @@ if __name__ == '__main__':
       np.testing.assert_allclose(np.dot(q.T, q), np.eye(min(d1, d2)), atol=1e-6) # check that q.T * q = I
       np.testing.assert_allclose(np.dot(q, r), a_val) # check that a = (I - y * t * y_top.T) * r
 
-  for i in range(10):
+  def test_dist_qr(d1, d2):
+      print "testing dist_qr with d1 = " + str(d1) + ", d2 = " + str(d2)
+      a = dist.dist_random_normal([d1, d2], [10, 10])
+      a_val = a.assemble()
+      Ts, y_res, r_res = dist.dist_qr(a)
+      # import IPython
+      # IPython.embed()
+
+      # for j in range(y_res.num_blocks[1]):
+      #    for i in range(y_res.num_blocks[0]):
+      #        print "i,j = " + str((i, j)) + ", shape = " + str(op.context.pull(np.ndarray, y_res.blocks[i, j]).shape)
+      # import sys
+      # sys.stdout.flush()
+
+      r_val = r_res.assemble()
+      y_val = y_res.assemble()
+
+      q = np.eye(d1)
+      for i in range(min(a.num_blocks[0], a.num_blocks[1])):
+          q = np.dot(q, np.eye(d1) - np.dot(y_val[:, (i * 10):((i + 1) * 10)], np.dot(Ts[i], y_val[:, (i * 10):((i + 1) * 10)].T)))
+
+      print "q shape is " + str(q.shape)
+      print "r shape is " + str(r_val.shape)
+
+      q = q[:, :min(d1, d2)]
+
+      np.testing.assert_allclose(np.triu(r_val), r_val) # check that r is upper triangular
+      np.testing.assert_allclose(np.dot(q.T, q), np.eye(min(d1, d2)), atol=1e-6) # check that q.T * q = I
+      np.testing.assert_allclose(np.dot(q, r_val), a_val) # check that a = q * r
+
+
+  for i in range(1):
       d1 = np.random.randint(1, 100)
       d2 = np.random.randint(1, 100)
       d3 = np.random.randint(1, 100)
       test_dist_dot(d1, d2, d3)
 
-  for i in range(10):
+  for i in range(1):
       d1 = np.random.randint(1, 50)
       d2 = np.random.randint(1, 11)
       test_dist_tsqr(d1, d2)
 
-  for i in range(10):
+  for i in range(1):
       d2 = np.random.randint(1, 100)
       d1 = np.random.randint(d2, 100)
       test_single_modified_lu(d1, d2)
 
-  for i in range(10):
+  for i in range(1):
       d1 = np.random.randint(1, 100)
       d2 = np.random.randint(1, 11)
       test_dist_tsqr_hr(d1, d2)
+
+  for i in range(100):
+      d1 = np.random.randint(1, 100)
+      d2 = np.random.randint(1, 100)
+      test_dist_qr(d1, d2)
 
   import IPython
   IPython.embed()

@@ -6,6 +6,10 @@ import unison
 def single_zeros(shape):
     return np.zeros(shape)
 
+@op.distributed([int], np.ndarray)
+def single_eye(dim):
+    return np.eye(dim)
+
 @op.distributed([unison.List[int]], np.ndarray)
 def single_random_normal(shape):
     return np.random.normal(size=shape)
