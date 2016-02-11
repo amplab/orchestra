@@ -168,9 +168,9 @@ cdef class Context:
       orchestra_store_result(self.context, objref, result, len(result))
 
   """Args is serialized version of the arguments."""
-  def call(self, name, arglist):
+  def call(self, func_name, module_name, arglist):
     args = serialize_args(arglist).SerializeToString()
-    return ObjRef(orchestra_call(self.context, name, args, len(args)))
+    return ObjRef(orchestra_call(self.context, module_name + "." + func_name, args, len(args)))
 
   def map(self, func, arglist):
     arraytype = bytes_to_native_str(b'L')
@@ -230,8 +230,9 @@ def distributed(types, return_type):
         def func_call(*args, typecheck=False):
           if typecheck:
             check_types(args, func_call.types)
-          return context.call(func_call.name, args)
-        func_call.name = func.__name__.encode()
+          return context.call(func_call.func_name, func_call.module_name, args)
+        func_call.func_name = func.__name__.encode() # why do we call encode()?
+        func_call.module_name = func.__module__.encode() # why do we call encode()?
         func_call.is_distributed = True
         func_call.executor = func_executor
         func_call.types = types
