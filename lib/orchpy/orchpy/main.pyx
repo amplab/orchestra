@@ -198,7 +198,7 @@ cdef class Context:
     unison.serialize(buf, obj)
     objref = orchestra_push(self.context)
     orchestra_store_result(self.context, objref, buf, len(buf))
-    return objref
+    return ObjRef(objref)
 
 context = Context()
 
