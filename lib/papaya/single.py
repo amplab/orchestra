@@ -3,24 +3,24 @@ import orchpy as op
 import unison
 
 @op.distributed([unison.List[int]], np.ndarray)
-def single_zeros(shape):
+def zeros(shape):
     return np.zeros(shape)
 
 @op.distributed([int], np.ndarray)
-def single_eye(dim):
+def eye(dim):
     return np.eye(dim)
 
 @op.distributed([unison.List[int]], np.ndarray)
-def single_random_normal(shape):
+def random_normal(shape):
     return np.random.normal(size=shape)
 
 @op.distributed([np.ndarray, np.ndarray], np.ndarray)
-def single_dot(a, b):
+def dot(a, b):
     return np.dot(a, b)
 
 # TODO(rkn): this should take the same optional "mode" argument as np.linalg.qr, except that the different options sometimes have different numbers of return values, which could be a problem
 @op.distributed([np.ndarray], unison.Tuple[np.ndarray, np.ndarray])
-def single_qr(a):
+def qr(a):
     """
     Suppose (n, m) = a.shape
     If n >= m:
@@ -34,25 +34,25 @@ def single_qr(a):
 
 # TODO(rkn): stopgap until we support returning tuples of object references
 @op.distributed([np.ndarray], np.ndarray)
-def single_qr_return_q(a):
+def qr_return_q(a):
     q, r = np.linalg.qr(a)
     return q
 
 # TODO(rkn): stopgap until we support returning tuples of object references
 @op.distributed([np.ndarray], np.ndarray)
-def single_qr_return_r(a):
+def qr_return_r(a):
     q, r = np.linalg.qr(a)
     return r
 
 # TODO(rkn): stopgap
 @op.distributed([np.ndarray], np.ndarray)
-def single_qr_return_h(a):
+def qr_return_h(a):
     h, tau = np.linalg.qr(a, mode='raw')
     return h
 
 # TODO(rkn): stopgap
 @op.distributed([np.ndarray], np.ndarray)
-def single_qr_return_tau(a):
+def qr_return_tau(a):
     h, tau = np.linalg.qr(a, mode='raw')
     return tau
 
@@ -61,26 +61,26 @@ def single_qr_return_tau(a):
 # doesn't work because that would expect a list of ndarrays not a list of
 # ObjRefs
 @op.distributed([np.ndarray, None], np.ndarray)
-def single_vstack(*xs):
+def vstack(*xs):
     return np.vstack(xs)
 
 # would have preferred @op.distributed([unison.List[np.ndarray]], np.ndarray)
 @op.distributed([np.ndarray, None], np.ndarray)
-def single_hstack(*xs):
+def hstack(*xs):
     return np.hstack(xs)
 
 # TODO(rkn): this doesn't parallel the numpy API, but we can't really slice an ObjRef, think about this
 @op.distributed([np.ndarray, unison.List[int], unison.List[int]], np.ndarray)
-def single_subarray(a, lower_indices, upper_indices): # TODO(rkn): be consistent about using "index" versus "indices"
+def subarray(a, lower_indices, upper_indices): # TODO(rkn): be consistent about using "index" versus "indices"
     return a[[slice(l, u) for (l, u) in zip(lower_indices, upper_indices)]]
 
 @op.distributed([np.ndarray], np.ndarray)
-def single_copy(a):
+def copy(a):
     return np.copy(a)
 
 # TODO(rkn): probably make this distributed
 #@op.distributed([np.ndarray], unison.Tuple[np.ndarray, np.ndarray, np.ndarray])
-def single_modified_lu(q):
+def modified_lu(q):
     """
     takes a matrix q with orthonormal columns, returns l, u, s such that q - s = l * u
     arguments:

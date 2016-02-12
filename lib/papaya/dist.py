@@ -64,26 +64,26 @@ class DistArray(object):
         return result
 
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
-def dist_zeros(shape, dtype):
+def zeros(shape, dtype):
     dist_array = DistArray(dtype, shape)
     for index in np.ndindex(*dist_array.num_blocks):
-        dist_array.blocks[index] = single.single_zeros(dist_array.compute_block_shape(index))
+        dist_array.blocks[index] = single.zeros(dist_array.compute_block_shape(index))
     return dist_array
 
-def dist_eye(dim, dtype):
+def eye(dim, dtype):
     # TODO(rkn): this code is pretty ugly, please clean it up
-    dist_array = dist_zeros([dim, dim], dtype)
+    dist_array = zeros([dim, dim], dtype)
     num_blocks = dist_array.num_blocks[0]
     for i in range(num_blocks - 1):
-        dist_array.blocks[i, i] = single.single_eye(block_size)
-    dist_array.blocks[num_blocks - 1, num_blocks - 1] = single.single_eye(dim - block_size * (num_blocks - 1))
+        dist_array.blocks[i, i] = single.eye(block_size)
+    dist_array.blocks[num_blocks - 1, num_blocks - 1] = single.eye(dim - block_size * (num_blocks - 1))
     return dist_array
 
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
-def dist_random_normal(shape):
+def random_normal(shape):
     dist_array = DistArray("float", shape)
     for index in np.ndindex(*dist_array.num_blocks):
-        dist_array.blocks[index] = single.single_random_normal(dist_array.compute_block_shape(index))
+        dist_array.blocks[index] = single.random_normal(dist_array.compute_block_shape(index))
     return dist_array
 
 @op.distributed([np.ndarray, None], np.ndarray)
@@ -97,7 +97,7 @@ def blockwise_inner(*matrices):
     return result
 
 #@op.distributed([DistArray, DistArray], DistArray)
-def dist_dot(a, b):
+def dot(a, b):
     assert(a.dtype == b.dtype)
     assert(len(a.shape) == len(b.shape) == 2)
     assert(a.shape[1] == b.shape[0])
@@ -111,7 +111,7 @@ def dist_dot(a, b):
     return res
 
 # @op.distributed([DistArray], unison.Tuple[DistArray, np.ndarray])
-def dist_tsqr(a):
+def tsqr(a):
     """
     arguments:
         a: a distributed matrix
@@ -137,8 +137,8 @@ def dist_tsqr(a):
     current_rs = []
     for i in range(num_blocks):
         block = a.blocks[i, 0]
-        q = single.single_qr_return_q(block)
-        r = single.single_qr_return_r(block)
+        q = single.qr_return_q(block)
+        r = single.qr_return_r(block)
         q_tree[i, 0] = q
         current_rs.append(r)
         assert op.context.pull(np.ndarray, q).shape[0] == op.context.pull(np.ndarray, a.blocks[i, 0]).shape[0] # TODO(rkn): remove this code at some point
@@ -146,9 +146,9 @@ def dist_tsqr(a):
     for j in range(1, K):
         new_rs = []
         for i in range(int(np.ceil(1.0 * len(current_rs) / 2))):
-            stacked_rs = single.single_vstack(*current_rs[(2 * i):(2 * i + 2)])
-            q = single.single_qr_return_q(stacked_rs)
-            r = single.single_qr_return_r(stacked_rs)
+            stacked_rs = single.vstack(*current_rs[(2 * i):(2 * i + 2)])
+            q = single.qr_return_q(stacked_rs)
+            r = single.qr_return_r(stacked_rs)
             q_tree[i, j] = q
             new_rs.append(r)
         current_rs = new_rs
@@ -174,16 +174,16 @@ def dist_tsqr(a):
                 lower = [a.shape[1], 0]
                 upper = [2 * a.shape[1], block_size]
             ith_index /= 2
-            q_block_current = single.single_dot(q_block_current, single.single_subarray(q_tree[ith_index, j], lower, upper))
+            q_block_current = single.dot(q_block_current, single.subarray(q_tree[ith_index, j], lower, upper))
         q_result.blocks[i] = q_block_current
     r = op.context.pull(np.ndarray, current_rs[0])
     assert r.shape == (min(a.shape[0], a.shape[1]), a.shape[1])
     return q_result, r
 
-def dist_tsqr_hr(a):
+def tsqr_hr(a):
     """Algorithm 6 from http://www.eecs.berkeley.edu/Pubs/TechRpts/2013/EECS-2013-175.pdf"""
-    q, r_temp = dist_tsqr(a)
-    y, u, s = single.single_modified_lu(q.assemble())
+    q, r_temp = tsqr(a)
+    y, u, s = single.modified_lu(q.assemble())
     s_full = np.diag(s)
     b = q.shape[1]
     #s_full = np.zeros(q.shape)
@@ -194,7 +194,7 @@ def dist_tsqr_hr(a):
     r = np.dot(s_full, r_temp)
     return y, t, y_top, r
 
-def dist_array_from_blocks(blocks):
+def array_from_blocks(blocks):
     dims = len(blocks.shape)
     num_blocks = list(blocks.shape)
     shape = []
@@ -209,7 +209,7 @@ def dist_array_from_blocks(blocks):
         dist_array.blocks[index] = blocks[index]
     return dist_array
 
-def dist_qr(a):
+def qr(a):
     """Algorithm 7 from http://www.eecs.berkeley.edu/Pubs/TechRpts/2013/EECS-2013-175.pdf"""
     m, n = a.shape[0], a.shape[1]
     k = min(m, n)
@@ -219,14 +219,14 @@ def dist_qr(a):
     for index in np.ndindex(*a.num_blocks):
         a_work.blocks[index] = a.blocks[index]
 
-    r_res = dist_zeros([k, n], a.dtype)
-    y_res = dist_zeros([m, k], a.dtype)
+    r_res = zeros([k, n], a.dtype)
+    y_res = zeros([m, k], a.dtype)
     Ts = []
 
     for i in range(min(a.num_blocks[0], a.num_blocks[1])): # this differs from the paper, which says "for i in range(a.num_blocks[1])", but that doesn't seem to make any sense when a.num_blocks[1] > a.num_blocks[0]
         b = min(block_size, a.shape[1] - block_size * i)
         column_dist_array = DistArray(a_work.dtype, [m, b])
-        y, t, _, R = dist_tsqr_hr(dist_array_from_blocks(a_work.blocks[i:, i:(i + 1)]))
+        y, t, _, R = tsqr_hr(array_from_blocks(a_work.blocks[i:, i:(i + 1)]))
 
         # print "WWW: y.shape = " + str(y.shape)
         for j in range(i, a.num_blocks[0]):
@@ -252,7 +252,7 @@ def dist_qr(a):
                 a_work.blocks[r, c] = op.context.push(A_rc)
             r_res.blocks[i, c] = a_work.blocks[i, c]
 
-    q_res = dist_eye(a.shape[0], "float")
+    q_res = eye(a.shape[0], "float")
     # construct q_res from Ys and Ts
     #TODO(construct q_res from Ys and Ts)
     # for i in range(a.num_blocks[1]):
