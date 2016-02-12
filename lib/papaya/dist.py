@@ -63,11 +63,27 @@ class DistArray(object):
             result[[slice(l, u) for (l, u) in zip(lower, upper)]] = op.context.pull(np.ndarray, self.blocks[index])
         return result
 
+    def __getitem__(self, sliced):
+        # TODO(rkn): fix this, this is just a placeholder that should work but is inefficient
+        a = self.assemble()
+        return a[sliced]
+
+#@op.distributed([DistArray], np.ndarray)
+def assemble(a):
+    return a.assemble()
+
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
 def zeros(shape, dtype):
     dist_array = DistArray(dtype, shape)
     for index in np.ndindex(*dist_array.num_blocks):
         dist_array.blocks[index] = single.zeros(dist_array.compute_block_shape(index))
+    return dist_array
+
+#@op.distributed([DistArray], DistArray)
+def copy(a):
+    dist_array = DistArray(a.dtype, a.shape)
+    for index in np.ndindex(*dist_array.num_blocks):
+        dist_array.blocks[index] = single.copy(a.blocks[index])
     return dist_array
 
 def eye(dim, dtype):
@@ -84,6 +100,36 @@ def random_normal(shape):
     dist_array = DistArray("float", shape)
     for index in np.ndindex(*dist_array.num_blocks):
         dist_array.blocks[index] = single.random_normal(dist_array.compute_block_shape(index))
+    return dist_array
+
+#@op.distributed([DistArray], DistArray)
+def triu(a):
+    if len(a.shape) != 2:
+        raise Exception("input must have dimension 2, but len(a.shape) is " + str(len(a.shape)))
+    dist_array = DistArray(a.dtype, a.shape)
+    for i in range(a.num_blocks[0]):
+        for j in range(a.num_blocks[1]):
+            if i < j:
+                dist_array.blocks[i, j] = single.copy(a.blocks[i, j])
+            elif i == j:
+                dist_array.blocks[i, j] = single.triu(a.blocks[i, j])
+            else:
+                dist_array.blocks[i, j] = single.zeros([block_size, block_size])
+    return dist_array
+
+#@op.distributed([DistArray], DistArray)
+def tril(a):
+    if len(a.shape) != 2:
+        raise Exception("input must have dimension 2, but len(a.shape) is " + str(len(a.shape)))
+    dist_array = DistArray(a.dtype, a.shape)
+    for i in range(a.num_blocks[0]):
+        for j in range(a.num_blocks[1]):
+            if i > j:
+                dist_array.blocks[i, j] = single.copy(a.blocks[i, j])
+            elif i == j:
+                dist_array.blocks[i, j] = single.triu(a.blocks[i, j])
+            else:
+                dist_array.blocks[i, j] = single.zeros([block_size, block_size])
     return dist_array
 
 @op.distributed([np.ndarray, None], np.ndarray)
@@ -183,12 +229,9 @@ def tsqr(a):
 def tsqr_hr(a):
     """Algorithm 6 from http://www.eecs.berkeley.edu/Pubs/TechRpts/2013/EECS-2013-175.pdf"""
     q, r_temp = tsqr(a)
-    y, u, s = single.modified_lu(q.assemble())
+    y, u, s = single.modified_lu(assemble(q))
     s_full = np.diag(s)
     b = q.shape[1]
-    #s_full = np.zeros(q.shape)
-    #for i in range(b):
-    #    s_full[i, i] = s[i]
     y_top = y[:b, :b]
     t = -1 * np.dot(u, np.dot(s_full, np.linalg.inv(y_top).T))
     r = np.dot(s_full, r_temp)
@@ -228,7 +271,6 @@ def qr(a):
         column_dist_array = DistArray(a_work.dtype, [m, b])
         y, t, _, R = tsqr_hr(array_from_blocks(a_work.blocks[i:, i:(i + 1)]))
 
-        # print "WWW: y.shape = " + str(y.shape)
         for j in range(i, a.num_blocks[0]):
             y_res.blocks[j, i] = op.context.push(y[((j - i) * block_size):((j - i + 1) * block_size), :]) # eventually this should go away
         if a.shape[0] > a.shape[1]:
@@ -246,8 +288,6 @@ def qr(a):
             W_c = np.sum(W_rcs, axis=0)
             for r in range(i, a.num_blocks[0]):
                 y_ri = y[((r - i) * block_size):((r - i + 1) * block_size), :]
-                # import IPython
-                # IPython.embed()
                 A_rc = op.context.pull(np.ndarray, a_work.blocks[r, c]) - np.dot(y_ri, np.dot(t.T, W_c))
                 a_work.blocks[r, c] = op.context.push(A_rc)
             r_res.blocks[i, c] = a_work.blocks[i, c]

@@ -66,10 +66,19 @@ def subarray(a, lower_indices, upper_indices): # TODO(rkn): be consistent about 
 def copy(a):
     return np.copy(a)
 
-# TODO(rkn): probably make this distributed
+@op.distributed([np.ndarray], np.ndarray)
+def tril(a):
+    return np.tril(a)
+
+@op.distributed([np.ndarray], np.ndarray)
+def triu(a):
+    return np.triu(a)
+
 #@op.distributed([np.ndarray], unison.Tuple[np.ndarray, np.ndarray, np.ndarray])
 def modified_lu(q):
     """
+    Algorithm 5 from http://www.eecs.berkeley.edu/Pubs/TechRpts/2013/EECS-2013-175.pdf
+
     takes a matrix q with orthonormal columns, returns l, u, s such that q - s = l * u
     arguments:
         q: a two dimensional orthonormal q
