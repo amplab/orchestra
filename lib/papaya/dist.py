@@ -4,18 +4,18 @@ import orchpy as op
 import unison
 from cprotobuf import ProtoEntity, Field
 
+block_size = 10
+
 class DistArrayProto(ProtoEntity):
     shape = Field('uint64', 1, repeated=True)
-    block_size = Field('uint64', 2, repeated=True)
-    dtype = Field('string', 3, required=True)
-    objrefs = Field(op.ObjRefsProto, 4, required=False)
+    dtype = Field('string', 2, required=True)
+    objrefs = Field(op.ObjRefsProto, 3, required=False)
 
 class DistArray(object):
     def construct(self):
         self.dtype = self.proto.dtype
         self.shape = self.proto.shape
-        self.block_size = self.proto.block_size
-        self.num_blocks = [int(np.ceil(1.0 * a / b)) for (a, b) in zip(self.proto.shape, self.proto.block_size)]
+        self.num_blocks = [int(np.ceil(1.0 * a / block_size)) for a in self.proto.shape]
         self.blocks = op.ObjRefs()
         self.blocks.from_proto(self.proto.objrefs)
 
@@ -27,30 +27,29 @@ class DistArray(object):
         self.proto = proto
         construct()
 
-    def __init__(self, dtype='float', shape=None, block_size=None):
+    def __init__(self, dtype='float', shape=None):
         self.proto = DistArrayProto()
         if shape != None:
             self.proto.shape = shape
-            self.proto.block_size = block_size
             self.proto.dtype = dtype
-            self.num_blocks = [int(np.ceil(1.0 * a / b)) for (a, b) in zip(self.proto.shape, self.proto.block_size)]
+            self.num_blocks = [int(np.ceil(1.0 * a / block_size)) for a in self.proto.shape]
             objrefs = op.ObjRefs(self.num_blocks)
             self.proto.objrefs = objrefs.proto
             self.construct()
 
     def compute_block_lower(self, index):
         lower = []
-        for i in range(len(self.block_size)):
-            lower.append(index[i] * self.block_size[i])
+        for i in range(len(index)):
+            lower.append(index[i] * block_size)
         return lower
 
     def compute_block_upper(self, index):
         upper = []
-        for i in range(len(self.block_size)):
-            upper.append(min((index[i] + 1) * self.block_size[i], self.shape[i]))
+        for i in range(len(index)):
+            upper.append(min((index[i] + 1) * block_size, self.shape[i]))
         return upper
 
-    def compute_block_size(self, index):
+    def compute_block_shape(self, index):
         lower = self.compute_block_lower(index)
         upper = self.compute_block_upper(index)
         return [u - l for (l, u) in zip(lower, upper)]
@@ -65,27 +64,26 @@ class DistArray(object):
         return result
 
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
-def dist_zeros(shape, block_size, dtype):
-    dist_array = DistArray(dtype, shape, block_size)
+def dist_zeros(shape, dtype):
+    dist_array = DistArray(dtype, shape)
     for index in np.ndindex(*dist_array.num_blocks):
-        dist_array.blocks[index] = single.single_zeros(dist_array.compute_block_size(index))
+        dist_array.blocks[index] = single.single_zeros(dist_array.compute_block_shape(index))
     return dist_array
 
-def dist_eye(dim, block_size, dtype):
+def dist_eye(dim, dtype):
     # TODO(rkn): this code is pretty ugly, please clean it up
-    assert len(block_size) == 2 # this should probably be a "raise" not an "assert"
-    dist_array = dist_zeros([dim, dim], block_size, dtype)
+    dist_array = dist_zeros([dim, dim], dtype)
     num_blocks = dist_array.num_blocks[0]
     for i in range(num_blocks - 1):
-        dist_array.blocks[i, i] = single.single_eye(block_size[0])
-    dist_array.blocks[num_blocks - 1, num_blocks - 1] = single.single_eye(dim - block_size[0] * (num_blocks - 1))
+        dist_array.blocks[i, i] = single.single_eye(block_size)
+    dist_array.blocks[num_blocks - 1, num_blocks - 1] = single.single_eye(dim - block_size * (num_blocks - 1))
     return dist_array
 
 #@op.distributed([unison.List[int], unison.List[int], str], DistArray)
-def dist_random_normal(shape, block_size):
-    dist_array = DistArray("float", shape, block_size)
+def dist_random_normal(shape):
+    dist_array = DistArray("float", shape)
     for index in np.ndindex(*dist_array.num_blocks):
-        dist_array.blocks[index] = single.single_random_normal(dist_array.compute_block_size(index))
+        dist_array.blocks[index] = single.single_random_normal(dist_array.compute_block_shape(index))
     return dist_array
 
 @op.distributed([np.ndarray, None], np.ndarray)
@@ -103,11 +101,9 @@ def dist_dot(a, b):
     assert(a.dtype == b.dtype)
     assert(len(a.shape) == len(b.shape) == 2)
     assert(a.shape[1] == b.shape[0])
-    assert(a.block_size[1] == b.block_size[0])
     dtype = a.dtype
     shape = [a.shape[0], b.shape[1]]
-    block_size = [a.block_size[0], b.block_size[1]]
-    res = DistArray(dtype, shape, block_size)
+    res = DistArray(dtype, shape)
     for i in range(res.num_blocks[0]):
         for j in range(res.num_blocks[1]):
             args = list(a.blocks[i,:]) + list(b.blocks[:,j])
@@ -162,9 +158,9 @@ def dist_tsqr(a):
     # and has fewer rows than columns, this is a bit ugly so think about how to
     # remove it
     if a.shape[0] >= a.shape[1]:
-        q_result = DistArray(a.dtype, a.shape, a.block_size)
+        q_result = DistArray(a.dtype, a.shape)
     else:
-        q_result = DistArray(a.dtype, [a.shape[0], a.shape[0]], a.block_size)
+        q_result = DistArray(a.dtype, [a.shape[0], a.shape[0]])
 
     # reconstruct output
     for i in range(num_blocks):
@@ -173,10 +169,10 @@ def dist_tsqr(a):
         for j in range(1, K):
             if np.mod(ith_index, 2) == 0:
                 lower = [0, 0]
-                upper = [a.shape[1], a.block_size[1]]
+                upper = [a.shape[1], block_size]
             else:
                 lower = [a.shape[1], 0]
-                upper = [2 * a.shape[1], a.block_size[1]]
+                upper = [2 * a.shape[1], block_size]
             ith_index /= 2
             q_block_current = single.single_dot(q_block_current, single.single_subarray(q_tree[ith_index, j], lower, upper))
         q_result.blocks[i] = q_block_current
@@ -198,7 +194,7 @@ def dist_tsqr_hr(a):
     r = np.dot(s_full, r_temp)
     return y, t, y_top, r
 
-def dist_array_from_blocks(blocks, block_size):
+def dist_array_from_blocks(blocks):
     dims = len(blocks.shape)
     num_blocks = list(blocks.shape)
     shape = []
@@ -207,8 +203,8 @@ def dist_array_from_blocks(blocks, block_size):
         index[i] = -1
         index = tuple(index)
         remainder = op.context.pull(np.ndarray, blocks[index]).shape[i]
-        shape.append(block_size[i] * (num_blocks[i] - 1) + remainder)
-    dist_array = DistArray("float", shape, block_size)
+        shape.append(block_size * (num_blocks[i] - 1) + remainder)
+    dist_array = DistArray("float", shape)
     for index in np.ndindex(*blocks.shape):
         dist_array.blocks[index] = blocks[index]
     return dist_array
@@ -219,22 +215,22 @@ def dist_qr(a):
     k = min(m, n)
 
     # we will store our scratch work in a_work
-    a_work = DistArray(a.dtype, a.shape, a.block_size)
+    a_work = DistArray(a.dtype, a.shape)
     for index in np.ndindex(*a.num_blocks):
         a_work.blocks[index] = a.blocks[index]
 
-    r_res = dist_zeros([k, n], a.block_size, a.dtype)
-    y_res = dist_zeros([m, k], a.block_size, a.dtype)
+    r_res = dist_zeros([k, n], a.dtype)
+    y_res = dist_zeros([m, k], a.dtype)
     Ts = []
 
     for i in range(min(a.num_blocks[0], a.num_blocks[1])): # this differs from the paper, which says "for i in range(a.num_blocks[1])", but that doesn't seem to make any sense when a.num_blocks[1] > a.num_blocks[0]
-        b = min(a.block_size[1], a.shape[1] - a.block_size[1] * i)
-        column_dist_array = DistArray(a_work.dtype, [m, b], a.block_size)
-        y, t, _, R = dist_tsqr_hr(dist_array_from_blocks(a_work.blocks[i:, i:(i + 1)], a.block_size))
+        b = min(block_size, a.shape[1] - block_size * i)
+        column_dist_array = DistArray(a_work.dtype, [m, b])
+        y, t, _, R = dist_tsqr_hr(dist_array_from_blocks(a_work.blocks[i:, i:(i + 1)]))
 
         # print "WWW: y.shape = " + str(y.shape)
         for j in range(i, a.num_blocks[0]):
-            y_res.blocks[j, i] = op.context.push(y[((j - i) * a.block_size[0]):((j - i + 1) * a.block_size[0]), :]) # eventually this should go away
+            y_res.blocks[j, i] = op.context.push(y[((j - i) * block_size):((j - i + 1) * block_size), :]) # eventually this should go away
         if a.shape[0] > a.shape[1]:
             # in this case, R needs to be square
             r_res.blocks[i, i] = op.context.push(np.vstack([R, np.zeros((R.shape[1] - R.shape[0], R.shape[1]))]))
@@ -245,18 +241,18 @@ def dist_qr(a):
         for c in range(i + 1, a.num_blocks[1]):
             W_rcs = []
             for r in range(i, a.num_blocks[0]):
-                y_ri = y[((r - i) * a.block_size[0]):((r - i + 1) * a.block_size[0]), :]
+                y_ri = y[((r - i) * block_size):((r - i + 1) * block_size), :]
                 W_rcs.append(np.dot(y_ri.T, op.context.pull(np.ndarray, a_work.blocks[r, c]))) # eventually the pull should go away
             W_c = np.sum(W_rcs, axis=0)
             for r in range(i, a.num_blocks[0]):
-                y_ri = y[((r - i) * a.block_size[0]):((r - i + 1) * a.block_size[0]), :]
+                y_ri = y[((r - i) * block_size):((r - i + 1) * block_size), :]
                 # import IPython
                 # IPython.embed()
                 A_rc = op.context.pull(np.ndarray, a_work.blocks[r, c]) - np.dot(y_ri, np.dot(t.T, W_c))
                 a_work.blocks[r, c] = op.context.push(A_rc)
             r_res.blocks[i, c] = a_work.blocks[i, c]
 
-    q_res = dist_eye(a.shape[0], a.block_size, "float")
+    q_res = dist_eye(a.shape[0], "float")
     # construct q_res from Ys and Ts
     #TODO(construct q_res from Ys and Ts)
     # for i in range(a.num_blocks[1]):
