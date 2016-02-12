@@ -44,18 +44,6 @@ def qr_return_r(a):
     q, r = np.linalg.qr(a)
     return r
 
-# TODO(rkn): stopgap
-@op.distributed([np.ndarray], np.ndarray)
-def qr_return_h(a):
-    h, tau = np.linalg.qr(a, mode='raw')
-    return h
-
-# TODO(rkn): stopgap
-@op.distributed([np.ndarray], np.ndarray)
-def qr_return_tau(a):
-    h, tau = np.linalg.qr(a, mode='raw')
-    return tau
-
 # TODO(rkn): My preferred signature would have been
 # @op.distributed([unison.List[np.ndarray]], np.ndarray) but that currently
 # doesn't work because that would expect a list of ndarrays not a list of
