@@ -81,7 +81,8 @@ impl Scheduler {
 
     let fntable = self.fntable.read().unwrap();
     let mut fns = Vec::new();
-    for (fnname, workers) in fntable.iter() {
+    for (fnname, fninfo) in fntable.iter() {
+      let (ref workers, _) = *fninfo;
       let mut info = comm::FnInfo::new();
       info.set_fnname(fnname.to_string());
       info.set_workerid((*workers).iter().map(|x| *x as u64).collect());
@@ -104,7 +105,8 @@ impl Scheduler {
           panic!("next job bailing");
           return None;
       }
-      if self.fntable.read().unwrap()[job.get_name()].binary_search(&workerid).is_ok() && self.can_run(job, objtable) {
+      let (ref workers, _) = self.fntable.read().unwrap()[job.get_name()];
+      if workers.binary_search(&workerid).is_ok() && self.can_run(job, objtable) {
         return Some(i);
       }
     }
@@ -130,7 +132,8 @@ impl Scheduler {
           panic!("next worker bailing");
           return None;
       }
-      if self.fntable.read().unwrap()[job.get_name()].binary_search(workerid).is_ok() && self.can_run(job, objtable) {
+      let (ref workers, _) = self.fntable.read().unwrap()[job.get_name()];
+      if workers.binary_search(workerid).is_ok() && self.can_run(job, objtable) {
         return Some(i);
       }
     }

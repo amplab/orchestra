@@ -240,10 +240,20 @@ impl<'a> Server<'a> {
   }
 
   /// Add a new call to the computation graph.
-  pub fn add_call<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b [ObjRef]) -> ObjRef {
-    let result = self.register_new_object();
-    self.graph.add_op(fnname, args, result);
-    return result;
+  pub fn add_call<'b>(self: &'b mut Server<'a>, fnname: String, args: &'b [ObjRef]) -> Vec<ObjRef> {
+
+    let mut num_return_vals = 0;
+    {
+        let table = self.fntable.read().unwrap();
+        let (_, num_return_vals) = *table.get(&fnname).unwrap();
+    }
+    let mut objrefs = Vec::new();
+    for i in 0..num_return_vals {
+        let objref = self.register_new_object();
+        objrefs.push(objref);
+        self.graph.add_op(fnname.clone(), args, objref);
+    }
+    return objrefs;
   }
 
   /// Add a map call to the computation graph.
@@ -271,8 +281,8 @@ impl<'a> Server<'a> {
     let mut args = Vec::new();
     push_objrefs(call.get_args(), &mut args);
     if call.get_field_type() == comm::Call_Type::INVOKE_CALL {
-      let objref = self.add_call(call.get_name().into(), &args[..]);
-      call.set_result(vec!(objref));
+      let objrefs = self.add_call(call.get_name().into(), &args[..]);
+      call.set_result(objrefs);
       self.workerpool.queue_job(call.clone()); // can we get rid of this clone?
     }
     if call.get_field_type() == comm::Call_Type::MAP_CALL {
@@ -353,11 +363,14 @@ impl<'a> Server<'a> {
         info!("function {} registered (worker {})", fnname.to_string(), workerid);
         let mut table = self.fntable.write().unwrap();
         if !table.contains_key(fnname) {
-          table.insert(fnname.into(), vec!());
+          table.insert(fnname.into(), (vec!(), msg.get_num_return_vals()));
         }
-        match table.get(fnname).unwrap().binary_search(&workerid) {
-          Ok(_) => {},
-          Err(idx) => { table.get_mut(fnname).unwrap().insert(idx, workerid); }
+        let (ref mut workers, _) = *table.get_mut(fnname).unwrap();
+        match workers.binary_search(&workerid) {
+            Ok(_) => {},
+            Err(idx) => {
+                workers.insert(idx, workerid);
+            }
         }
         send_ack(socket);
       }

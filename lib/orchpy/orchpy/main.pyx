@@ -113,12 +113,16 @@ cdef struct Slice:
   size_t size
   char* ptr
 
+cdef struct ObjRefs:
+  size_t size
+  uint64_t* ptr
+
 cdef extern void* orchestra_create_context(const char* server_addr, uint16_t reply_port, uint16_t publish_port, const char* client_addr, uint16_t client_port)
-cdef extern size_t orchestra_register_function(void* context, const char* name)
-cdef extern size_t orchestra_step(void* context)
+cdef extern size_t orchestra_register_function(void* context, const char* name, uint64_t num_return_vals)
+cdef extern ObjRefs orchestra_step(void* context)
 cdef extern Slice orchestra_get_args(void* context)
 cdef extern size_t orchestra_function_index(void* context)
-cdef extern size_t orchestra_call(void* context, const char* name, const char* args, size_t argslen)
+cdef extern ObjRefs orchestra_call(void* context, const char* name, const char* args, size_t argslen)
 cdef extern void orchestra_map(void* context, char* name, char* args, size_t argslen, size_t* retlist)
 cdef extern void orchestra_store_result(void* context, size_t objref, char* data, size_t datalen)
 cdef extern size_t orchestra_get_obj_len(void* Context, size_t objref)
@@ -132,11 +136,11 @@ cdef class Context:
   cdef void* context
   cdef public list functions
   cdef public list arg_types
+  cdef public list num_return_vals
 
   def __cinit__(self):
     self.context = NULL
     self.functions = []
-    self.arg_types = []
 
   def connect(self, server_addr, reply_port, publish_port, client_addr, client_port):
     self.context = orchestra_create_context(server_addr, reply_port, publish_port, client_addr, client_port)
@@ -155,9 +159,9 @@ cdef class Context:
     return unison.deserialize(data, type)
 
   def main_loop(self):
-    cdef size_t objref = 0
+    # cdef size_t objref = 0
     while True:
-      objref = orchestra_step(self.context)
+      objrefs = orchestra_step(self.context)
       fnidx = orchestra_function_index(self.context)
       slice = orchestra_get_args(self.context)
       data = PyBytes_FromStringAndSize(slice.ptr, slice.size)
@@ -165,12 +169,18 @@ cdef class Context:
       args = pb.Args()
       args.ParseFromString(data)
       result = func(args)
-      orchestra_store_result(self.context, objref, result, len(result))
+      for i in range(objrefs.size):
+        print(objrefs.ptr[i])
+        orchestra_store_result(self.context, objrefs.ptr[i], result[i], len(result[i]))
 
   """Args is serialized version of the arguments."""
-  def call(self, func_name, module_name, arglist):
+  def call(self, func_name, module_name, arglist, num_return_vals):
     args = serialize_args(arglist).SerializeToString()
-    return ObjRef(orchestra_call(self.context, module_name + "." + func_name, args, len(args)))
+    objrefs = orchestra_call(self.context, module_name + "." + func_name, args, len(args))
+    retlist = []
+    for i in range(objrefs.size):
+      retlist.append(ObjRef(objrefs.ptr[i]))
+    return tuple(retlist)
 
   def map(self, func, arglist):
     arraytype = bytes_to_native_str(b'L')
@@ -183,11 +193,11 @@ cdef class Context:
     return retlist
 
   """Register a function that can be called remotely."""
-  def register(self, func_name, module_name, function, *args):
-    fnid = orchestra_register_function(self.context, module_name + "." + func_name)
+  def register(self, func_name, module_name, function, arg_types, return_types):
+    fnid = orchestra_register_function(self.context, module_name + "." + func_name, len(return_types))
     assert(fnid == len(self.functions))
     self.functions.append(function)
-    self.arg_types.append(args)
+    self.num_return_vals.append(len(return_types))
 
   def pull(self, type, objref):
     objref = orchestra_pull(self.context, objref.get_id())
@@ -202,40 +212,54 @@ cdef class Context:
 
 context = Context()
 
-def distributed(types, return_type):
+def distributed(arg_types, return_types):
     def distributed_decorator(func):
         # deserialize arguments, execute function and serialize result
         def func_executor(args):
             arguments = []
-            protoargs = deserialize_args(args, types)
+            protoargs = deserialize_args(args, arg_types)
             for (i, proto) in enumerate(protoargs):
               if type(proto) == ObjRef:
-                if i < len(types) - 1:
-                  arguments.append(context.get_object(proto, types[i]))
-                elif i == len(types) - 1 and types[-1] is not None:
-                  arguments.append(context.get_object(proto, types[i]))
-                elif types[-1] is None:
-                  arguments.append(context.get_object(proto, types[-2]))
+                if i < len(arg_types) - 1:
+                  arguments.append(context.get_object(proto, arg_types[i]))
+                elif i == len(arg_types) - 1 and arg_types[-1] is not None:
+                  arguments.append(context.get_object(proto, arg_types[i]))
+                elif arg_types[-1] is None:
+                  arguments.append(context.get_object(proto, arg_types[-2]))
                 else:
-                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.__name__ + ", which takes only " + str(len(types)) + " arguments.")
+                  raise Exception("Passed in " + str(len(args)) + " arguments to function " + func.__name__ + ", which takes only " + str(len(arg_types)) + " arguments.")
               else:
                 arguments.append(proto)
-            buf = bytearray()
+            return_buffers = []
             result = func(*arguments)
-            if unison.unison_type(result) != return_type:
-              raise Exception("Return type of " + func.func_name + " does not match the return type specified in the @distributed decorator, was expecting " + str(return_type) + " but received " + str(unison.unison_type(result)))
-            unison.serialize(buf, result)
-            return memoryview(buf).tobytes()
+
+            # check return type
+            if len(return_types) == 1:
+              if unison.unison_type(result) != return_types[0]:
+                raise Exception("Return type of " + func.func_name + " does not match the return type specified in the @distributed decorator, was expecting " + str(return_types[0]) + " but received " + str(unison.unison_type(result)))
+              buf = bytearray()
+              unison.serialize(buf, result)
+              return_buffers.append(memoryview(buf).tobytes())
+            else:
+              for i in range(len(return_types)):
+                if unison.unison_type(result[i]) != return_types[i]:
+                  raise Exception("Return type of argument " + str(i) + " for function " + func.func_name + " does not match the return type specified in the @distributed decorator, was expecting " + str(return_types[i]) + " but received " + str(unison.unison_type(result[i])))
+                buf = bytearray()
+                unison.serialize(buf, result[i])
+                return_buffers.append(memoryview(buf).tobytes())
+
+            return return_buffers
         # for remotely executing the function
         def func_call(*args, typecheck=False):
           if typecheck:
-            check_types(args, func_call.types)
-          return context.call(func_call.func_name, func_call.module_name, args)
+            check_types(args, func_call.arg_types)
+          return context.call(func_call.func_name, func_call.module_name, args, len(return_types))
         func_call.func_name = func.__name__.encode() # why do we call encode()?
         func_call.module_name = func.__module__.encode() # why do we call encode()?
         func_call.is_distributed = True
         func_call.executor = func_executor
-        func_call.types = types
+        func_call.arg_types = arg_types
+        func_call.return_types = return_types
         return func_call
     return distributed_decorator
 
@@ -243,7 +267,7 @@ def register_current():
   for (name, val) in globals().items():
     try:
       if val.is_distributed:
-        context.register(name.encode(), __name__, val.executor, *val.types)
+        context.register(name.encode(), __name__, val.executor, val.arg_types, val.return_types)
     except AttributeError:
       pass
 
@@ -253,6 +277,6 @@ def register_distributed(module):
         val = getattr(module, name)
         try:
             if val.is_distributed:
-                context.register(name.encode(), module.__name__, val.executor, *val.types)
+                context.register(name.encode(), module.__name__, val.executor, val.arg_types, val.return_types)
         except AttributeError:
             pass

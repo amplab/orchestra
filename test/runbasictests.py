@@ -85,7 +85,7 @@ class ClientTest(unittest.TestCase):
     print "publish port is", self.publish_port
 
     self.master = subprocess.Popen(["cargo", "run", "--release", "--bin", "orchestra", "--", str(self.incoming_port), str(self.publish_port)], env=dict(os.environ, RUST_BACKTRACE="1"), preexec_fn=os.setsid)
-    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", str(self.incoming_port), str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid), range(numworkers))
+    self.workers = map(lambda worker: subprocess.Popen(["python", "testprograms.py", str(self.incoming_port), str(get_unused_port()), str(self.publish_port)], preexec_fn=os.setsid, env=dict(os.environ, RUST_BACKTRACE="1")), range(numworkers))
 
   def testConnect(self):
     self.client_port = get_unused_port()

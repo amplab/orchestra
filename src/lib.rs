@@ -17,7 +17,7 @@ pub mod comm;
 pub mod client;
 pub mod utils;
 
-use libc::{size_t, c_char, uint8_t};
+use libc::{size_t, c_char, uint8_t, uint64_t};
 use std::slice;
 use client::{Context};
 use std::ffi::CStr;
@@ -37,6 +37,12 @@ fn string_from_c(string: *const c_char) -> String {
 pub struct Slice {
     len: usize,
     data: *const uint8_t
+}
+
+#[repr(C)]
+pub struct ObjRefs {
+    len: usize,
+    data: *const uint64_t
 }
 
 #[no_mangle]
@@ -82,9 +88,9 @@ pub extern "C" fn orchestra_get_type(context: *mut Context, name: *const c_char)
 */
 
 #[no_mangle]
-pub extern "C" fn orchestra_register_function(context: *mut Context, name: *const c_char) -> usize {
+pub extern "C" fn orchestra_register_function(context: *mut Context, name: *const c_char, num_return_vals: u64) -> usize {
     let name = string_from_c(name);
-    unsafe { return (*context).add_function(name) };
+    unsafe { return (*context).add_function(name, num_return_vals) };
 }
 
 #[no_mangle]
@@ -111,11 +117,12 @@ pub fn result_to_c(context: *mut Context, result: comm::Args) -> Slice {
 */
 
 #[no_mangle]
-pub extern "C" fn orchestra_call(context: *mut Context, name: *const c_char, args: *const uint8_t, argslen: size_t) -> size_t {
+pub extern "C" fn orchestra_call(context: *mut Context, name: *const c_char, args: *const uint8_t, argslen: size_t) -> ObjRefs {
     let name = string_from_c(name);
     let arguments = args_from_c(args, argslen);
     unsafe {
-        return (*context).remote_call_function(name, arguments);
+        let result = (*context).remote_call_function(name, arguments);
+        return ObjRefs { len: result.len(), data: result.as_ptr() }
     }
 }
 
@@ -163,10 +170,11 @@ pub extern "C" fn orchestra_debug_info(context: *mut Context) {
 }
 
 #[no_mangle]
-pub extern "C" fn orchestra_step(context: *mut Context) -> size_t {
+pub extern "C" fn orchestra_step(context: *mut Context) -> ObjRefs {
     unsafe {
         (*context).finish_request();
-        return (*context).client_step();
+        let result = (*context).client_step();
+        return ObjRefs { len: result.len(), data: result.as_ptr() }
     }
 }
 

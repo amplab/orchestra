@@ -193,7 +193,7 @@ impl Context {
         self.objects.lock().unwrap().insert(objref, data);
     }
 
-    pub fn add_function<'b>(self: &'b mut Context, name: String) -> usize {
+    pub fn add_function<'b>(self: &'b mut Context, name: String, num_return_vals: u64) -> usize {
         info!("registering function {}", name);
         let idx = self.functions.len();
         self.functions.insert(name.to_string(), idx);
@@ -201,6 +201,7 @@ impl Context {
         let mut msg = comm::Message::new();
         msg.set_field_type(comm::MessageType::REGISTER_FUNCTION);
         msg.set_fnname(name.to_string());
+        msg.set_num_return_vals(num_return_vals);
         msg.set_workerid(self.workerid as u64);
         send_message(&mut self.request, &mut msg);
         receive_ack(&mut self.request);
@@ -224,7 +225,7 @@ impl Context {
     pub fn get_type<'b>(self: &'b mut Context, name: String) -> Option<i32> {
         return self.types.get(&name).and_then(|&num| Some(num));
     }
-    pub fn remote_call_function<'b>(self: &'b mut Context, name: String, args: comm::Args) -> ObjRef {
+    pub fn remote_call_function<'b>(self: &'b mut Context, name: String, args: comm::Args) -> Vec<ObjRef> {
         let mut msg = comm::Message::new();
         msg.set_field_type(comm::MessageType::INVOKE);
         let mut call = comm::Call::new();
@@ -233,9 +234,8 @@ impl Context {
         msg.set_call(call);
         send_message(&mut self.request, &mut msg);
         let answer = receive_message(&mut self.request);
-        let result = answer.get_call().get_result();
-        assert!(result.len() == 1);
-        return result[0];
+        let result = answer.get_call().get_result().to_vec(); // TODO: get rid of this copy
+        return result;
     }
     // TODO: Remove duplication between remote_call_function and remote_call_map
     pub fn remote_call_map<'b>(self: &'b mut Context, name: String, args: comm::Args) -> Vec<ObjRef> {
@@ -315,7 +315,7 @@ impl Context {
         }
     }
 
-    pub fn client_step<'b>(self: &'b mut Context) -> ObjRef {
+    pub fn client_step<'b>(self: &'b mut Context) -> Vec<ObjRef> {
         loop {
             match self.notify_main.recv().unwrap() {
                 Event::Obj(objref) => {
@@ -375,9 +375,8 @@ impl Context {
                         // calling the function
                         let name = call.get_name().to_string();
                         self.function = self.functions.get(&name).expect("function not found").clone();
-                        let result = call.get_result();
-                        assert!(result.len() == 1);
-                        return result[0]
+                        let result = call.get_result().to_vec(); // TODO: get rid of this copy
+                        return result
                     }
                 }
             }

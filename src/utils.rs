@@ -18,7 +18,7 @@ pub type WorkerID = usize;
 /// For each object, contains a vector of worker ids that hold the object.
 pub type ObjTable = Vec<Vec<WorkerID>>;
 /// For each function, contains a sorted vector of worker ids that can execute the function.
-pub type FnTable = HashMap<String, Vec<WorkerID>>;
+pub type FnTable = HashMap<String, (Vec<WorkerID>, u64)>;
 
 /// Given a predicate `absent` that can test if an object is unavailable on the client, compute
 /// which objects fom `args` still need to be send so the function call can be invoked.
